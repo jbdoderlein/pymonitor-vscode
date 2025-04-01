@@ -1,0 +1,113 @@
+body {
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+}
+
+.function-card {
+    margin-bottom: 24px;
+    padding: 16px;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    background-color: var(--vscode-editor-background);
+}
+
+.function-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.line-number {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+}
+
+.time-info {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+    margin-bottom: 16px;
+}
+
+.section {
+    margin-top: 16px;
+}
+
+h4 {
+    color: var(--vscode-editor-foreground);
+    margin-bottom: 8px;
+}
+
+.variables-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.variable-card {
+    padding: 12px;
+    background-color: var(--vscode-editor-inactiveSelectionBackground);
+    border-radius: 4px;
+}
+
+.variable-name {
+    font-weight: bold;
+    color: var(--vscode-editor-foreground);
+}
+
+.variable-type {
+    font-size: 0.8em;
+    color: var(--vscode-descriptionForeground);
+    margin: 4px 0;
+}
+
+.variable-value {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+    color: var(--vscode-editor-foreground);
+    word-break: break-all;
+}
+
+.stack-trace {
+    margin-top: 12px;
+}
+
+.explore-stack-trace {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.explore-stack-trace:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.back-button {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 1000;
+}
+
+.back-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+} 

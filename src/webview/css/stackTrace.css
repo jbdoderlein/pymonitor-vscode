@@ -1,0 +1,145 @@
+body {
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+}
+
+.stack-trace-container {
+    padding: 16px;
+}
+
+.header {
+    margin-bottom: 20px;
+}
+
+.header h3 {
+    margin: 0 0 8px 0;
+    color: var(--vscode-editor-foreground);
+}
+
+.file-info {
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+}
+
+.timeline {
+    margin-top: 24px;
+}
+
+.timeline-controls {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.timeline-slider {
+    flex: 1;
+    margin: 0 16px;
+}
+
+.timeline-info {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 0.9em;
+    color: var(--vscode-descriptionForeground);
+}
+
+.timeline-button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+}
+
+.timeline-button:hover:not([disabled]) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.timeline-button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.frame {
+    padding: 16px;
+    background-color: var(--vscode-editor-inactiveSelectionBackground);
+    border-radius: 6px;
+    margin-top: 16px;
+}
+
+.frame-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+}
+
+.frame-locals {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.local-variable {
+    padding: 8px;
+    background-color: var(--vscode-editor-background);
+    border-radius: 4px;
+}
+
+.var-name {
+    font-weight: bold;
+    color: var(--vscode-editor-foreground);
+    margin-right: 8px;
+}
+
+.var-value {
+    font-family: 'Consolas', 'Monaco', monospace;
+    color: var(--vscode-editor-foreground);
+}
+
+.back-button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.back-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+input[type="range"] {
+    width: 100%;
+    height: 4px;
+    background: var(--vscode-editor-inactiveSelectionBackground);
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--vscode-button-background);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--vscode-button-hoverBackground);
+} 
