@@ -142,4 +142,60 @@ input[type="range"]::-webkit-slider-thumb {
 
 input[type="range"]::-webkit-slider-thumb:hover {
     background: var(--vscode-button-hoverBackground);
+}
+
+.local-timeline {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--vscode-panel-border);
+}
+
+.local-timeline h4 {
+    margin-bottom: 1rem;
+    color: var(--vscode-editor-foreground);
+}
+
+.local-timeline .timeline-controls {
+    margin-bottom: 1rem;
+}
+
+.local-timeline .frame {
+    background-color: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+.local-timeline .frame-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    color: var(--vscode-editor-foreground);
+}
+
+.local-timeline .frame-time {
+    color: var(--vscode-descriptionForeground);
+}
+
+.local-timeline .frame-locals {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.local-timeline .local-variable {
+    background-color: var(--vscode-editor-inactiveSelectionBackground);
+    padding: 0.5rem;
+    border-radius: 4px;
+}
+
+.local-timeline .var-name {
+    font-weight: bold;
+    color: var(--vscode-editor-foreground);
+}
+
+.local-timeline .var-value {
+    color: var(--vscode-editor-foreground);
+    word-break: break-all;
 } 

@@ -1,4 +1,11 @@
+import * as vscode from 'vscode';
 import { ApiResponse, FunctionData, ObjectGraphResponse, StackTraceResponse } from '../types';
+import { state, debugLog } from './state';
+import { ConfigService } from './config';
+
+const config = ConfigService.getInstance();
+
+const API_BASE_URL = 'http://localhost:5000';
 
 export async function retryFetch(url: string, maxRetries: number = 3): Promise<Response> {
     for (let i = 0; i < maxRetries; i++) {
@@ -18,32 +25,30 @@ export async function retryFetch(url: string, maxRetries: number = 3): Promise<R
     throw new Error('Max retries reached');
 }
 
-export async function waitForServer(timeoutMs: number = 5000): Promise<boolean> {
+export async function waitForServer(): Promise<boolean> {
     const startTime = Date.now();
-    while (Date.now() - startTime < timeoutMs) {
+    const timeout = config.getConfig().timeout;
+    while (Date.now() - startTime < timeout) {
         try {
-            const response = await fetch('http://localhost:5000/api/db-info');
+            const response = await fetch(`${config.getApiUrl()}/api/db-info`);
             if (response.ok) {
                 return true;
             }
         } catch (error) {
             // Server not ready yet, continue waiting
-            await new Promise(resolve => setTimeout(resolve, 100));
         }
+        await new Promise(resolve => setTimeout(resolve, 100));
     }
     return false;
 }
 
 export async function getFunctionData(filePath: string): Promise<FunctionData[] | null> {
     try {
-        const response = await retryFetch(`http://localhost:5000/api/function-calls?file=${encodeURIComponent(filePath)}`);
-        const data = await response.json() as ApiResponse<FunctionData>;
-        
-        if (data.error) {
-            throw new Error(data.error);
+        const response = await fetch(`${config.getApiUrl()}/api/function-calls?file=${encodeURIComponent(filePath)}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        console.log(`Found ${data.function_calls?.length || 0} function calls in ${filePath}`);
+        const data = await response.json() as { function_calls: FunctionData[] };
         return data.function_calls || [];
     } catch (error) {
         console.error('Error fetching function data:', error);
@@ -53,12 +58,9 @@ export async function getFunctionData(filePath: string): Promise<FunctionData[] 
 
 export async function getFunctionTraces(callId: string): Promise<FunctionData | null> {
     try {
-        const response = await retryFetch(`http://localhost:5000/api/function-call/${callId}`);
-        const data = await response.json() as ApiResponse<FunctionData>;
-        if (data.error) {
-            throw new Error(data.error);
-        }
-        return data.function_calls?.[0] || null;
+        const response = await retryFetch(`${config.getApiUrl()}/api/function-call/${callId}`);
+        const data = await response.json() as FunctionData;
+        return data;
     } catch (error) {
         console.error('Error fetching function traces:', error);
         return null;
@@ -81,7 +83,10 @@ export async function getObjectGraph(): Promise<ObjectGraphResponse | null> {
 
 export async function getStackTrace(functionId: string): Promise<StackTraceResponse | null> {
     try {
-        const response = await retryFetch(`http://localhost:5000/api/stack-trace/${functionId}`);
+        const response = await fetch(`${config.getApiUrl()}/api/stack-trace/${functionId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json() as StackTraceResponse;
         return data;
     } catch (error) {

@@ -5,21 +5,18 @@ import { exec, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { FunctionData, StackTraceResponse } from './types';
-import { getFunctionData, getStackTrace, waitForServer } from './services/api';
+import { FunctionData } from './types';
+import { getFunctionData, waitForServer, getStackTrace } from './services/api';
+import { showFunctionDetails as showFunctionDetailsInWebview } from './services/webview';
+import { PyMonitorCodeLensProvider } from './services/codeLens';
+import { state, debugLog } from './services/state';
+import { ConfigService } from './services/config';
 
 const execAsync = promisify(exec);
+const config = ConfigService.getInstance();
 
 let webServerProcess: ChildProcess | null = null;
 let statusBarItem: vscode.StatusBarItem;
-let functionDataCache: Map<string, FunctionData[]> = new Map();
-let stackTracePanel: vscode.WebviewPanel | null = null;
-let functionDetailsPanel: vscode.WebviewPanel | undefined = undefined;
-let currentFunctionData: FunctionData[] | null = null;
-let currentHighlight: vscode.TextEditorDecorationType | null = null;
-let currentLine: number | null = null;
-let currentEditor: vscode.TextEditor | undefined = undefined;
-let currentStep: number = 0;
 let extensionContext: vscode.ExtensionContext;
 
 interface ApiResponse<T> {
@@ -49,19 +46,50 @@ interface StackFrame {
 	line: number;
 }
 
-async function startWebServer(pythonPath: string, workspaceRoot: string) {
+async function checkPythonEnvironment(): Promise<boolean> {
 	try {
-		// Check if main.db exists
-		const dbPath = path.join(workspaceRoot, 'main.db');
-		if (!fs.existsSync(dbPath)) {
-			console.log('No main.db found in workspace root');
+		const pythonExtension = vscode.extensions.getExtension('ms-python.python');
+		if (!pythonExtension) {
+			vscode.window.showErrorMessage('Python extension not found! Please install it first.');
 			return false;
 		}
 
+		const executionDetails = await pythonExtension.exports.settings.getExecutionDetails();
+		const pythonPath = executionDetails.execCommand[0];
+		if (!pythonPath) {
+			vscode.window.showErrorMessage('No Python executable found');
+			return false;
+		}
+
+		// Check if Python is installed and accessible
+		try {
+			await execAsync(`${pythonPath} --version`);
+		} catch (error) {
+			vscode.window.showErrorMessage('Python is not accessible. Please check your Python installation.');
+			return false;
+		}
+
+		return true;
+	} catch (error) {
+		console.error('Error checking Python environment:', error);
+		vscode.window.showErrorMessage('Failed to check Python environment');
+		return false;
+	}
+}
+
+async function startWebServer(pythonPath: string, workspaceRoot: string): Promise<void> {
+	try {
 		// Kill existing server if any
 		if (webServerProcess) {
 			webServerProcess.kill();
 			webServerProcess = null;
+		}
+
+		// Check if main.db exists
+		const dbPath = path.join(workspaceRoot, 'main.db');
+		if (!fs.existsSync(dbPath)) {
+			console.log('No main.db found in workspace root');
+			return;
 		}
 
 		// Start the web server in the background
@@ -93,195 +121,30 @@ async function startWebServer(pythonPath: string, workspaceRoot: string) {
 		statusBarItem.show();
 
 		console.log('Web server started and ready');
-		return true;
 	} catch (error) {
 		console.error('Error starting web server:', error);
 		statusBarItem.text = "$(error) PyMonitor Server Error";
 		statusBarItem.tooltip = "Error starting PyMonitor server";
 		statusBarItem.show();
-		return false;
-	}
-}
-
-async function checkMonitoringPy(pythonPath: string): Promise<boolean> {
-	try {
-		console.log(`Attempting to import monitoringpy using: ${pythonPath}`);
-		const { stdout } = await execAsync(`${pythonPath} -c "import monitoringpy; print('monitoringpy version:', monitoringpy.__version__)"`);
-		console.log('Import successful:', stdout);
-		return true;
-	} catch (error) {
-		console.error('Import failed:', error);
-		return false;
-	}
-}
-
-async function retryFetch(url: string, maxRetries: number = 3): Promise<Response> {
-	for (let i = 0; i < maxRetries; i++) {
-		try {
-			const response = await fetch(url);
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-			return response;
-		} catch (error) {
-			if (i === maxRetries - 1) {
-				throw error;
-			}
-			await new Promise(resolve => setTimeout(resolve, 1000));
-		}
-	}
-	throw new Error('Max retries reached');
-}
-
-async function getObjectGraph(): Promise<ObjectGraphResponse | null> {
-	try {
-		const response = await retryFetch('http://localhost:5000/api/object-graph');
-		const data = await response.json() as ObjectGraphResponse;
-		if (data.error) {
-			throw new Error(data.error);
-		}
-		return data;
-	} catch (error) {
-		console.error('Error fetching object graph:', error);
-		return null;
-	}
-}
-
-async function checkPythonEnvironment() {
-	console.log('Checking Python environment...');
-	
-	// Get Python extension
-	const pythonExtension = vscode.extensions.getExtension('ms-python.python');
-	if (!pythonExtension) {
-		console.error('Error: Python extension not found!');
-		vscode.window.showErrorMessage('Python extension not found!');
-		return false;
-	}
-
-	try {
-		// Wait for Python extension to be ready
-		if (!pythonExtension.isActive) {
-			console.log('Waiting for Python extension to activate...');
-			await pythonExtension.activate();
-		}
-
-		// Get the Python interpreter path from the Python extension
-		const executionDetails = await pythonExtension.exports.settings.getExecutionDetails();
-		console.log('Python execution details:', executionDetails);
-		
-		// The executable path is in the execCommand array
-		const pythonPath = executionDetails.execCommand[0];
-		if (!pythonPath) {
-			throw new Error('No Python executable found in execution details');
-		}
-
-		console.log(`Using Python interpreter: ${pythonPath}`);
-		
-		// Verify Python is working
-		try {
-			const { stdout } = await execAsync(`${pythonPath} --version`);
-			console.log('Python version:', stdout);
-		} catch (error) {
-			console.error('Error getting Python version:', error);
-			throw error;
-		}
-		
-		const hasMonitoringPy = await checkMonitoringPy(pythonPath);
-		if (!hasMonitoringPy) {
-			const message = 'monitoringpy package is not installed. Please install it using: pip install monitoringpy';
-			console.warn(message);
-			vscode.window.showWarningMessage(message);
-			return false;
-		}
-
-		// Get workspace root
-		const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-		if (!workspaceRoot) {
-			throw new Error('No workspace folder found');
-		}
-
-		// Start web server if main.db exists
-		const serverStarted = await startWebServer(pythonPath, workspaceRoot);
-		if (!serverStarted) {
-			console.log('Web server not started - no main.db found');
-			return false;
-		}
-
-		return true;
-	} catch (error) {
-		const errorMessage = `Error checking monitoringpy: ${error}`;
-		console.error(errorMessage);
-		vscode.window.showErrorMessage(errorMessage);
-		return false;
-	}
-}
-
-class PyMonitorCodeLensProvider implements vscode.CodeLensProvider {
-	private codeLenses: vscode.CodeLens[] = [];
-	private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
-	public readonly onDidChangeCodeLenses: vscode.Event<void> = this._onDidChangeCodeLenses.event;
-
-	constructor() {
-		// Refresh code lenses when function data changes
-		setInterval(() => {
-			this._onDidChangeCodeLenses.fire();
-		}, 5000); // Refresh every 5 seconds
-	}
-
-	public refresh() {
-		this._onDidChangeCodeLenses.fire();
-	}
-
-	public provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
-		this.codeLenses = [];
-		
-		const filePath = document.uri.fsPath;
-		const functionData = functionDataCache.get(filePath);
-		
-		if (!functionData) {
-			return [];
-		}
-
-		// Group functions by line number
-		const functionsByLine = new Map<number, FunctionData[]>();
-		functionData.forEach(func => {
-			if (!functionsByLine.has(func.line)) {
-				functionsByLine.set(func.line, []);
-			}
-			functionsByLine.get(func.line)!.push(func);
-		});
-
-		// Create code lenses for each function
-		functionsByLine.forEach((funcs, line) => {
-			const range = new vscode.Range(line - 1, 0, line - 1, 0);
-			const command: vscode.Command = {
-				command: 'pymonitor.showFunctionDetails',
-				title: `📊 ${funcs.length} execution${funcs.length > 1 ? 's' : ''}`,
-				arguments: [funcs]
-			};
-			this.codeLenses.push(new vscode.CodeLens(range, command));
-		});
-
-		return this.codeLenses;
 	}
 }
 
 async function showFunctionDetails(functions: FunctionData[]) {
-	currentFunctionData = functions;
+	state.currentFunctionData = functions;
 	
 	// Store the current editor when first opening the panel
-	if (!functionDetailsPanel) {
-		currentEditor = vscode.window.activeTextEditor;
+	if (!state.functionDetailsPanel) {
+		state.currentEditor = vscode.window.activeTextEditor;
 	}
 	
-	if (functionDetailsPanel) {
+	if (state.functionDetailsPanel) {
 		// Update existing panel
-		functionDetailsPanel.title = 'Function Details';
+		state.functionDetailsPanel.title = 'Function Details';
 		updateFunctionDetailsPanel(functions);
-		functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+		state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
 	} else {
 		// Create new panel
-		functionDetailsPanel = vscode.window.createWebviewPanel(
+		state.functionDetailsPanel = vscode.window.createWebviewPanel(
 			'functionDetails',
 			'Function Details',
 			vscode.ViewColumn.Beside,
@@ -293,7 +156,8 @@ async function showFunctionDetails(functions: FunctionData[]) {
 		);
 
 		// Add message handler for the panel
-		functionDetailsPanel.webview.onDidReceiveMessage(async message => {
+		state.functionDetailsPanel.webview.onDidReceiveMessage(async message => {
+			debugLog('Received message from webview:', message);
 			if (message.command === 'exploreStackTrace') {
 				console.log('Received stack trace exploration request for function:', message.functionId);
 				const functionId = message.functionId;
@@ -301,62 +165,84 @@ async function showFunctionDetails(functions: FunctionData[]) {
 				if (functionData) {
 					await exploreStackTrace(functionId);
 				}
-			} else if (message.command === 'backToFunctions' && currentFunctionData) {
+			} else if (message.command === 'backToFunctions' && state.currentFunctionData) {
+				debugLog('Going back to functions list');
 				// Remove highlight when going back to function list
-				if (currentHighlight) {
-					currentHighlight.dispose();
-					currentHighlight = null;
-					currentLine = null;
+				if (state.currentHighlight) {
+					state.currentHighlight.dispose();
+					state.currentHighlight = null;
+					state.currentLine = null;
 				}
-				updateFunctionDetailsPanel(currentFunctionData);
-			} else if (message.command === 'updateLine') {
+				state.isInStackTraceView = false;
+				updateFunctionDetailsPanel(state.currentFunctionData);
+			} else if (message.command === 'updateLine' && state.isInStackTraceView) {
+				debugLog('Received line update:', message.line, 'isUpdatingTimeline:', state.isUpdatingTimeline);
 				// Handle line updates from the timeline
-				console.log('Received line update request:', message.line);
-				console.log('Current editor:', currentEditor);
-				if (currentEditor) {
-					highlightLine(currentEditor, message.line);
+				if (state.currentEditor) {
+					highlightLine(state.currentEditor, message.line);
 				}
-			} else if (message.command === 'sliderChange' && functionDetailsPanel) {
+			} else if (message.command === 'sliderChange' && state.functionDetailsPanel) {
+				debugLog('Received slider change:', message.value, 'isUpdatingTimeline:', state.isUpdatingTimeline);
 				// Handle slider changes
-				currentStep = message.value;
-				functionDetailsPanel.webview.postMessage({
+				state.isUpdatingTimeline = true;
+				state.currentStep = message.value;
+				state.functionDetailsPanel.webview.postMessage({
 					command: 'updateStep',
-					step: currentStep
+					step: state.currentStep
 				});
-			} else if (message.command === 'prevStep' && functionDetailsPanel) {
+				setTimeout(() => { 
+					state.isUpdatingTimeline = false;
+					debugLog('Reset isUpdatingTimeline to false');
+				}, 100);
+			} else if (message.command === 'prevStep' && state.functionDetailsPanel) {
+				debugLog('Received prevStep, currentStep:', state.currentStep);
 				// Handle previous button click
-				if (currentStep > 0) {
-					currentStep--;
-					functionDetailsPanel.webview.postMessage({
+				if (state.currentStep > 0) {
+					state.isUpdatingTimeline = true;
+					state.currentStep--;
+					state.functionDetailsPanel.webview.postMessage({
 						command: 'updateStep',
-						step: currentStep
+						step: state.currentStep
 					});
+					setTimeout(() => { 
+						state.isUpdatingTimeline = false;
+						debugLog('Reset isUpdatingTimeline to false after prevStep');
+					}, 100);
 				}
-			} else if (message.command === 'nextStep' && functionDetailsPanel) {
+			} else if (message.command === 'nextStep' && state.functionDetailsPanel) {
+				debugLog('Received nextStep, currentStep:', state.currentStep);
 				// Handle next button click
-				const maxStep = parseInt(functionDetailsPanel.webview.html.match(/max="(\d+)"/)?.[1] || '0');
-				if (currentStep < maxStep) {
-					currentStep++;
-					functionDetailsPanel.webview.postMessage({
+				const maxStep = parseInt(state.functionDetailsPanel.webview.html.match(/max="(\d+)"/)?.[1] || '0');
+				if (state.currentStep < maxStep) {
+					state.isUpdatingTimeline = true;
+					state.currentStep++;
+					state.functionDetailsPanel.webview.postMessage({
 						command: 'updateStep',
-						step: currentStep
+						step: state.currentStep
 					});
+					setTimeout(() => { 
+						state.isUpdatingTimeline = false;
+						debugLog('Reset isUpdatingTimeline to false after nextStep');
+					}, 100);
 				}
 			}
 		});
 
 		updateFunctionDetailsPanel(functions);
-		functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+		state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
 	}
 }
 
 function updateFunctionDetailsPanel(functions: FunctionData[]) {
-	if (!functionDetailsPanel) {
+	if (!state.functionDetailsPanel) {
 		return;
 	}
 
+	// Reset stack trace view flag when going back to function list
+	state.isInStackTraceView = false;
+
 	// Get the webview content
-	const htmlContent = getWebviewContent(functionDetailsPanel.webview, 'html/functionDetails.html');
+	const htmlContent = getWebviewContent(state.functionDetailsPanel.webview, 'html/functionDetails.html');
 	
 	// Generate the function cards content
 	const content = functions.map(func => `
@@ -406,7 +292,7 @@ function updateFunctionDetailsPanel(functions: FunctionData[]) {
 	const finalHtml = htmlContent.replace('<div id="content"></div>', `<div id="content">${content}</div>`);
 	
 	// Set the panel HTML
-	functionDetailsPanel.webview.html = finalHtml;
+	state.functionDetailsPanel.webview.html = finalHtml;
 }
 
 async function exploreStackTrace(functionId: string) {
@@ -417,15 +303,16 @@ async function exploreStackTrace(functionId: string) {
 			return;
 		}
 
-		// Reset step counter
-		currentStep = 0;
+		// Reset step counter and set stack trace view flag
+		state.currentStep = 0;
+		state.isInStackTraceView = true;
 
-		if (!functionDetailsPanel) {
+		if (!state.functionDetailsPanel) {
 			return;
 		}
 
 		// Get the webview content
-		const htmlContent = getWebviewContent(functionDetailsPanel.webview, 'html/stackTrace.html');
+		const htmlContent = getWebviewContent(state.functionDetailsPanel.webview, 'html/stackTrace.html');
 		
 		// Generate the stack trace content
 		const content = `
@@ -470,22 +357,44 @@ async function exploreStackTrace(functionId: string) {
 						</div>
 					</div>
 				</div>
+				<div class="local-timeline">
+					<h4>Local Timeline for Line ${data.snapshots[0].line}</h4>
+					<div class="timeline-controls">
+						<button class="timeline-button" id="localPrevButton" disabled>
+							<span class="codicon codicon-chevron-left"></span> Previous
+						</button>
+						<div class="timeline-slider">
+							<input type="range" 
+								   id="localTimelineSlider" 
+								   min="0" 
+								   max="0" 
+								   value="0"
+								   step="1">
+							<div class="timeline-info">
+								Snapshot <span id="localCurrentStep">1</span> of <span id="localTotalSteps">1</span>
+							</div>
+						</div>
+						<button class="timeline-button" id="localNextButton" disabled>
+							Next <span class="codicon codicon-chevron-right"></span>
+						</button>
+					</div>
+				</div>
 			</div>
 		`;
 
 		// Replace the content placeholder in the template
 		const finalHtml = htmlContent.replace('<div id="content"></div>', `<div id="content">${content}</div>`);
 
-		functionDetailsPanel.title = `Stack Trace - ${data.function_name}`;
-		functionDetailsPanel.webview.html = finalHtml;
+		state.functionDetailsPanel.title = `Stack Trace - ${data.function_name}`;
+		state.functionDetailsPanel.webview.html = finalHtml;
 		
 		// Send snapshots data to the webview
-		functionDetailsPanel.webview.postMessage({
+		state.functionDetailsPanel.webview.postMessage({
 			command: 'setSnapshots',
 			snapshots: data.snapshots
 		});
 		
-		functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+		state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
 	} catch (error) {
 		console.error('Error exploring stack trace:', error);
 		vscode.window.showErrorMessage('Failed to explore stack trace');
@@ -525,11 +434,14 @@ function getWebviewContent(webview: vscode.Webview, templatePath: string): strin
 	}
 }
 
+// Single function to handle line highlighting
 function highlightLine(editor: vscode.TextEditor, line: number) {
+	debugLog('Highlighting line:', line);
+	
 	// Remove previous highlight if any
-	if (currentHighlight) {
-		currentHighlight.dispose();
-		currentHighlight = null;
+	if (state.currentHighlight) {
+		state.currentHighlight.dispose();
+		state.currentHighlight = null;
 	}
 
 	// Create new highlight
@@ -545,8 +457,8 @@ function highlightLine(editor: vscode.TextEditor, line: number) {
 	editor.selection = new vscode.Selection(line - 1, 0, line - 1, 0);
 	editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
 
-	currentHighlight = decorationType;
-	currentLine = line;
+	state.currentHighlight = decorationType;
+	state.currentLine = line;
 }
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -560,11 +472,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	statusBarItem.command = 'pymonitor.restartServer';
 
 	// Register commands
-	const checkCommand = vscode.commands.registerCommand('pymonitor.checkPython', () => {
-		console.log('Check command triggered');
-		checkPythonEnvironment();
-	});
-
+	const checkCommand = vscode.commands.registerCommand('pymonitor.checkPython', checkPythonEnvironment);
 	const restartCommand = vscode.commands.registerCommand('pymonitor.restartServer', async () => {
 		console.log('Restart server command triggered');
 		const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -589,22 +497,30 @@ export async function activate(context: vscode.ExtensionContext) {
 		await startWebServer(pythonPath, workspaceRoot);
 	});
 
-	const showDetailsCommand = vscode.commands.registerCommand('pymonitor.showFunctionDetails', (functions: FunctionData[]) => {
-		showFunctionDetails(functions);
+	const showFunctionDetailsCommand = vscode.commands.registerCommand('pymonitor.showFunctionDetails', (functions: FunctionData[]) => {
+		showFunctionDetailsInWebview(functions, context);
 	});
 
 	// Register code lens provider
 	const codeLensProvider = new PyMonitorCodeLensProvider();
-	context.subscriptions.push(vscode.languages.registerCodeLensProvider({ scheme: 'file', language: 'python' }, codeLensProvider));
+	context.subscriptions.push(vscode.languages.registerCodeLensProvider({ scheme: 'file' }, codeLensProvider));
 
 	// Register a document change event listener for Python files
 	const documentListener = vscode.workspace.onDidOpenTextDocument(async (document) => {
 		if (document.languageId === 'python') {
 			console.log(`Python file opened: ${document.fileName}`);
+			
+			// Check if server is running
+			const serverReady = await waitForServer();
+			if (!serverReady) {
+				vscode.window.showErrorMessage('PyMonitor server is not running. Please start it using the "PyMonitor: Restart Server" command.');
+				return;
+			}
+
 			const functionData = await getFunctionData(document.fileName);
 			if (functionData) {
 				console.log('Function data for file:', functionData);
-				functionDataCache.set(document.fileName, functionData);
+				state.functionDataCache.set(document.fileName, functionData);
 				codeLensProvider.refresh();
 			}
 		}
@@ -614,7 +530,28 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.window.onDidChangeActiveTextEditor(editor => {
 			if (editor) {
-				currentEditor = editor;
+				state.currentEditor = editor;
+			}
+		})
+	);
+
+	// Update the click handler to only send messages to panel
+	context.subscriptions.push(
+		vscode.window.onDidChangeTextEditorSelection(event => {
+			if (event.textEditor === state.currentEditor && 
+				event.selections.length > 0 && 
+				state.isInStackTraceView && 
+				!state.isUpdatingTimeline) {
+				const line = event.selections[0].active.line + 1;
+				debugLog('Editor line clicked:', line);
+				
+				// Send line click to panel, let it handle the logic
+				if (state.functionDetailsPanel) {
+					state.functionDetailsPanel.webview.postMessage({
+						command: 'editorLineClick',
+						line: line
+					});
+				}
 			}
 		})
 	);
@@ -624,19 +561,42 @@ export async function activate(context: vscode.ExtensionContext) {
 	if (!envReady) {
 		vscode.window.showErrorMessage('Failed to initialize PyMonitor. Check the output panel for details.');
 	} else {
+		// Get workspace root and Python path
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+		if (!workspaceRoot) {
+			vscode.window.showErrorMessage('No workspace folder found');
+			return;
+		}
+
+		const pythonExtension = vscode.extensions.getExtension('ms-python.python');
+		if (!pythonExtension) {
+			vscode.window.showErrorMessage('Python extension not found!');
+			return;
+		}
+
+		const executionDetails = await pythonExtension.exports.settings.getExecutionDetails();
+		const pythonPath = executionDetails.execCommand[0];
+		if (!pythonPath) {
+			vscode.window.showErrorMessage('No Python executable found');
+			return;
+		}
+
+		// Start the server
+		await startWebServer(pythonPath, workspaceRoot);
+
 		// Load function data for all already opened Python files
 		const openDocuments = vscode.workspace.textDocuments.filter(doc => doc.languageId === 'python');
 		for (const doc of openDocuments) {
 			console.log(`Loading data for already opened file: ${doc.fileName}`);
 			const functionData = await getFunctionData(doc.fileName);
 			if (functionData) {
-				functionDataCache.set(doc.fileName, functionData);
+				state.functionDataCache.set(doc.fileName, functionData);
 			}
 		}
 		codeLensProvider.refresh();
 	}
 
-	context.subscriptions.push(checkCommand, restartCommand, showDetailsCommand, documentListener, statusBarItem);
+	context.subscriptions.push(checkCommand, restartCommand, showFunctionDetailsCommand, documentListener, statusBarItem);
 }
 
 // This method is called when your extension is deactivated

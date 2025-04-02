@@ -14,8 +14,6 @@
   ],
   "activationEvents": [
     "onLanguage:python",
-    "onCommand:pymonitor.checkPython",
-    "onCommand:pymonitor.restartServer",
     "workspaceContains:main.db"
   ],
   "main": "./dist/extension.js",

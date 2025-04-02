@@ -13,4 +13,21 @@
             });
         }
     });
+
+    // Handle messages from the extension
+    window.addEventListener('message', event => {
+        const message = event.data;
+        switch (message.command) {
+            case 'updateStep':
+                updateStep(message.step);
+                break;
+        }
+    });
+
+    function updateStep(step) {
+        const currentStepElement = document.getElementById('currentStep');
+        if (currentStepElement) {
+            currentStepElement.textContent = step + 1;
+        }
+    }
 })(); 
