@@ -12,6 +12,7 @@ export interface State {
     currentFunctionData: FunctionData[] | undefined;
     currentHighlight: vscode.TextEditorDecorationType | null;
     currentStackTraceData: StackTraceResponse | null;
+    isProgrammaticSelectionChange: boolean;
 }
 
 // Create a singleton instance of the state
@@ -25,7 +26,8 @@ const state: State = {
     functionDetailsPanel: undefined,
     currentFunctionData: undefined,
     currentHighlight: null,
-    currentStackTraceData: null
+    currentStackTraceData: null,
+    isProgrammaticSelectionChange: false
 };
 
 export function debugLog(...args: any[]) {

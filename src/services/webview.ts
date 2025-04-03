@@ -54,47 +54,6 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
             } else if (message.command === 'highlightLine' && state.currentEditor) {
                 // Only highlight lines when explicitly requested by the panel
                 highlightLine(state.currentEditor, message.line);
-            } else if (message.command === 'sliderChange' && state.functionDetailsPanel) {
-                debugLog('Received slider change:', message.value);
-                state.isUpdatingTimeline = true;
-                state.currentStep = message.value;
-                state.functionDetailsPanel.webview.postMessage({
-                    command: 'updateStep',
-                    step: state.currentStep
-                });
-                setTimeout(() => { 
-                    state.isUpdatingTimeline = false;
-                    debugLog('Reset isUpdatingTimeline to false');
-                }, 100);
-            } else if (message.command === 'prevStep' && state.functionDetailsPanel) {
-                debugLog('Received prevStep, currentStep:', state.currentStep);
-                if (state.currentStep > 0) {
-                    state.isUpdatingTimeline = true;
-                    state.currentStep--;
-                    state.functionDetailsPanel.webview.postMessage({
-                        command: 'updateStep',
-                        step: state.currentStep
-                    });
-                    setTimeout(() => { 
-                        state.isUpdatingTimeline = false;
-                        debugLog('Reset isUpdatingTimeline to false after prevStep');
-                    }, 100);
-                }
-            } else if (message.command === 'nextStep' && state.functionDetailsPanel) {
-                debugLog('Received nextStep, currentStep:', state.currentStep);
-                const maxStep = parseInt(state.functionDetailsPanel.webview.html.match(/max="(\d+)"/)?.[1] || '0');
-                if (state.currentStep < maxStep) {
-                    state.isUpdatingTimeline = true;
-                    state.currentStep++;
-                    state.functionDetailsPanel.webview.postMessage({
-                        command: 'updateStep',
-                        step: state.currentStep
-                    });
-                    setTimeout(() => { 
-                        state.isUpdatingTimeline = false;
-                        debugLog('Reset isUpdatingTimeline to false after nextStep');
-                    }, 100);
-                }
             }
         });
 
@@ -178,11 +137,6 @@ async function exploreStackTrace(functionId: string, context: vscode.ExtensionCo
 
         if (!state.functionDetailsPanel) {
             return;
-        }
-
-        // Highlight the initial line in the editor
-        if (state.currentEditor && data.snapshots.length > 0) {
-            highlightLine(state.currentEditor, data.snapshots[0].line);
         }
 
         // Get the webview content
