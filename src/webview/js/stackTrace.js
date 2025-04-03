@@ -198,11 +198,11 @@
 
     // Update the current frame display
     function updateCurrentFrame() {
-        if (!snapshots || snapshots.length === 0) return;
+        if (!snapshots || snapshots.length === 0) {return;}
         
         const snapshot = snapshots[currentStep];
         const frame = document.getElementById('currentFrame');
-        if (!frame) return;
+        if (!frame) {return;}
         
         // Update frame content
         frame.innerHTML = `
@@ -235,10 +235,10 @@
 
     // Update local timeline based on current line
     function updateLocalTimeline() {
-        if (!snapshots || snapshots.length === 0 || currentStep >= snapshots.length) return;
+        if (!snapshots || snapshots.length === 0 || currentStep >= snapshots.length) {return;}
         
         const currentSnapshot = snapshots[currentStep];
-        if (!currentSnapshot) return;
+        if (!currentSnapshot) {return;}
         
         // Get all snapshots for the current line
         localSnapshots = snapshots.filter(s => s.line === currentSnapshot.line);

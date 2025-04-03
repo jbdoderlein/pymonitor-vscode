@@ -3,7 +3,7 @@ import { FunctionData, StackTraceResponse } from '../types';
 import { getWebviewContent } from '../utils/webview';
 import { highlightLine } from '../utils/highlight';
 import { state, debugLog } from './state';
-import { getStackTrace, getFunctionTraces } from './api';
+import { getStackTrace, getFunctionTraces, getFunctionData } from './api';
 
 export function showFunctionDetails(functions: FunctionData[], context: vscode.ExtensionContext) {
     state.currentFunctionData = functions;
@@ -54,11 +54,62 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
             } else if (message.command === 'highlightLine' && state.currentEditor) {
                 // Only highlight lines when explicitly requested by the panel
                 highlightLine(state.currentEditor, message.line);
+            } else if (message.command === 'reloadFunctionData') {
+                debugLog('Reloading function data');
+                await reloadFunctionData(context);
             }
         });
 
         updateFunctionDetailsPanel(functions, context);
         state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+    }
+}
+
+/**
+ * Reload function data from the API for the current file
+ */
+async function reloadFunctionData(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        if (!state.currentEditor) {
+            vscode.window.showErrorMessage('No active editor found');
+            return;
+        }
+
+        const filePath = state.currentEditor.document.fileName;
+        debugLog(`Reloading function data for ${filePath}`);
+
+        // Fetch fresh data from the API
+        const refreshedData = await getFunctionData(filePath);
+        
+        if (!refreshedData) {
+            vscode.window.showErrorMessage('Failed to reload function data');
+            return;
+        }
+
+        // Update the state
+        state.functionDataCache.set(filePath, refreshedData);
+        state.currentFunctionData = refreshedData;
+
+        // Update the webview
+        if (state.functionDetailsPanel) {
+            // If in stack trace view, go back to function list
+            if (state.isInStackTraceView) {
+                state.isInStackTraceView = false;
+            }
+            
+            // Update the panel with new data
+            updateFunctionDetailsPanel(refreshedData, context);
+            
+            // Notify the webview that data has been reloaded
+            state.functionDetailsPanel.webview.postMessage({
+                command: 'dataReloaded'
+            });
+            
+            debugLog('Function data reloaded successfully');
+        }
+    } catch (error) {
+        console.error('Error reloading function data:', error);
+        vscode.window.showErrorMessage('Failed to reload function data');
     }
 }
 

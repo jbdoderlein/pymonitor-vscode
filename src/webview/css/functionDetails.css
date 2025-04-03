@@ -110,4 +110,141 @@ h4 {
 
 .back-button:hover {
     background-color: var(--vscode-button-hoverBackground);
+}
+
+.header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.reload-button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.reload-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.reload-button .codicon {
+    font-size: 16px;
+}
+
+.function-card {
+    background-color: var(--vscode-panel-background);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.function-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.function-header h3 {
+    margin: 0;
+    color: var(--vscode-symbolIcon-functionForeground);
+}
+
+.line-number {
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    background-color: var(--vscode-badge-background);
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.time-info {
+    font-size: 0.9em;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.section {
+    margin-bottom: 16px;
+}
+
+.section h4 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 1em;
+    color: var(--vscode-editor-foreground);
+    border-bottom: 1px solid var(--vscode-input-border);
+    padding-bottom: 4px;
+}
+
+.variables-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+}
+
+.variable-card {
+    background-color: var(--vscode-input-background);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 0.9em;
+}
+
+.variable-name {
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: var(--vscode-symbolIcon-variableForeground);
+}
+
+.variable-type {
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 4px;
+}
+
+.variable-value {
+    font-family: monospace;
+    word-break: break-all;
+    white-space: pre-wrap;
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 4px;
+    background-color: var(--vscode-editor-background);
+    border-radius: 3px;
+    border: 1px solid var(--vscode-input-border);
+}
+
+.function-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.action-button {
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.action-button:hover {
+    background-color: var(--vscode-button-hoverBackground);
 } 

@@ -11,6 +11,8 @@ import { showFunctionDetails as showFunctionDetailsInWebview } from './services/
 import { PyMonitorCodeLensProvider } from './services/codeLens';
 import { state, debugLog } from './services/state';
 import { ConfigService } from './services/config';
+import { DebugFunctionCodeLensProvider } from './services/debugCodeLens';
+import { DebuggerService } from './services/debugger';
 
 const execAsync = promisify(exec);
 const config = ConfigService.getInstance();
@@ -18,6 +20,9 @@ const config = ConfigService.getInstance();
 let webServerProcess: ChildProcess | null = null;
 let statusBarItem: vscode.StatusBarItem;
 let extensionContext: vscode.ExtensionContext;
+
+// Add a flag to track programmatic selection changes, export it for use in highlight.ts
+export let isProgrammaticSelectionChange = false;
 
 async function checkPythonEnvironment(): Promise<boolean> {
 	try {
@@ -142,9 +147,24 @@ export async function activate(context: vscode.ExtensionContext) {
 		showFunctionDetailsInWebview(functions, context);
 	});
 
-	// Register code lens provider
+	// Register code lens providers
 	const codeLensProvider = new PyMonitorCodeLensProvider();
 	context.subscriptions.push(vscode.languages.registerCodeLensProvider({ scheme: 'file' }, codeLensProvider));
+
+	// Register debug code lens provider
+	const debugCodeLensProvider = new DebugFunctionCodeLensProvider();
+	context.subscriptions.push(vscode.languages.registerCodeLensProvider(
+		{ scheme: 'file', language: 'python' }, 
+		debugCodeLensProvider
+	));
+
+	// Debug function command
+	const debugFunctionCommand = vscode.commands.registerCommand('pymonitor.debugFunction', async (uri: vscode.Uri, functionInfo: any) => {
+		const debugService = DebuggerService.getInstance();
+		await debugService.debugFunction(uri, functionInfo);
+	});
+
+	context.subscriptions.push(debugFunctionCommand);
 
 	// Register a document change event listener for Python files
 	const documentListener = vscode.workspace.onDidOpenTextDocument(async (document) => {
@@ -164,6 +184,9 @@ export async function activate(context: vscode.ExtensionContext) {
 				state.functionDataCache.set(document.fileName, functionData);
 				codeLensProvider.refresh();
 			}
+
+			// Refresh debug code lenses
+			debugCodeLensProvider.refresh();
 		}
 	});
 
