@@ -1,84 +1,99 @@
 (function() {
+    // Get VS Code API
     const vscode = acquireVsCodeApi();
     
-    // Add click handlers for stack trace buttons
-    document.addEventListener('click', event => {
-        const button = event.target.closest('.explore-stack-trace');
-        if (button) {
-            const functionId = button.dataset.functionId;
-            console.log('Stack trace button clicked for function:', functionId);
-            vscode.postMessage({
-                command: 'exploreStackTrace',
-                functionId: functionId
-            });
+    // Initialize the script when the document is loaded
+    document.addEventListener('DOMContentLoaded', initialize);
+    
+    // Also initialize when receiving a 'dataReloaded' message
+    window.addEventListener('message', event => {
+        const message = event.data;
+        if (message.command === 'dataReloaded') {
+            console.log('Data reloaded, reinitializing event listeners');
+            resetReloadButton();
+            setTimeout(initializeEventListeners, 100); // Small delay to ensure DOM is updated
         }
+    });
 
-        // Handle reload button click
-        if (event.target.closest('#reload-button')) {
-            console.log('Reload button clicked');
-            vscode.postMessage({
-                command: 'reloadFunctionData'
-            });
+    function initialize() {
+        console.log('Initializing function details view');
+        initializeEventListeners();
+        
+        // Set up the reload button
+        setupReloadButton();
+        
+        // Add spinner animation style
+        addSpinnerStyle();
+    }
+    
+    function addSpinnerStyle() {
+        // Add CSS for spinner animation
+        const style = document.createElement('style');
+        style.textContent = `
+            .spin {
+                animation: spin 1.5s linear infinite;
+            }
             
-            // Show loading feedback on the button
-            const reloadButton = document.getElementById('reload-button');
-            if (reloadButton) {
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    function initializeEventListeners() {
+        // Add event listeners for stack trace exploration
+        document.querySelectorAll('.explore-stack-trace').forEach(button => {
+            button.addEventListener('click', event => {
+                const functionId = button.getAttribute('data-function-id');
+                console.log('Explore stack trace clicked for function:', functionId);
+                vscode.postMessage({
+                    command: 'exploreStackTrace',
+                    functionId: functionId
+                });
+            });
+        });
+    }
+    
+    function setupReloadButton() {
+        const reloadButton = document.getElementById('reload-button');
+        if (reloadButton) {
+            reloadButton.addEventListener('click', () => {
+                console.log('Reload button clicked');
+                
+                // Show loading indicator on the button
+                reloadButton.classList.add('loading');
                 const icon = reloadButton.querySelector('.codicon');
                 if (icon) {
                     icon.classList.remove('codicon-refresh');
-                    icon.classList.add('codicon-loading');
-                    icon.classList.add('spin');
-                    
-                    // Reset the icon after 2 seconds if no response
-                    setTimeout(() => {
-                        icon.classList.remove('codicon-loading');
-                        icon.classList.remove('spin');
-                        icon.classList.add('codicon-refresh');
-                    }, 2000);
+                    icon.classList.add('codicon-loading', 'spin');
                 }
-            }
-        }
-    });
-
-    // Handle messages from the extension
-    window.addEventListener('message', event => {
-        const message = event.data;
-        switch (message.command) {
-            case 'updateStep':
-                updateStep(message.step);
-                break;
-            case 'dataReloaded':
-                // Reset reload button state
-                const reloadButton = document.getElementById('reload-button');
-                if (reloadButton) {
-                    const icon = reloadButton.querySelector('.codicon');
-                    if (icon) {
-                        icon.classList.remove('codicon-loading');
-                        icon.classList.remove('spin');
-                        icon.classList.add('codicon-refresh');
+                
+                // Send message to extension to reload data
+                vscode.postMessage({
+                    command: 'reloadFunctionData'
+                });
+                
+                // If no response after 2 seconds, reset the button
+                setTimeout(() => {
+                    if (reloadButton.classList.contains('loading')) {
+                        resetReloadButton();
                     }
-                }
-                break;
-        }
-    });
-
-    function updateStep(step) {
-        const currentStepElement = document.getElementById('currentStep');
-        if (currentStepElement) {
-            currentStepElement.textContent = step + 1;
+                }, 2000);
+            });
         }
     }
-
-    // Add CSS for spinner animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+    
+    function resetReloadButton() {
+        const reloadButton = document.getElementById('reload-button');
+        if (reloadButton) {
+            reloadButton.classList.remove('loading');
+            const icon = reloadButton.querySelector('.codicon');
+            if (icon) {
+                icon.classList.remove('codicon-loading', 'spin');
+                icon.classList.add('codicon-refresh');
+            }
         }
-        .spin {
-            animation: spin 1s linear infinite;
-        }
-    `;
-    document.head.appendChild(style);
+    }
 })(); 
