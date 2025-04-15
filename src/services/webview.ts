@@ -13,7 +13,7 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
         state.currentEditor = vscode.window.activeTextEditor;
     }
     
-    if (state.functionDetailsPanel) {
+    if (state.functionDetailsPanel && state.functionDetailsPanel.active) {
         // Update existing panel
         state.functionDetailsPanel.title = 'Function Details';
         updateFunctionDetailsPanel(functions, context);

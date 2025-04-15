@@ -71,7 +71,8 @@ async function startWebServer(pythonPath: string, workspaceRoot: string): Promis
 		}
 
 		// Start the web server in the background
-		const command = `${pythonPath} -m monitoringpy.interface.web.explorer ${dbPath} --no-browser --port 5000`;
+		// monitoringpy.interface.web.explorer basic3.db --mode api
+		const command = `${pythonPath} -m monitoringpy.interface.web.explorer ${dbPath} --mode api`;
 		console.log('Starting server with command:', command);
 		
 		webServerProcess = exec(command, { cwd: workspaceRoot });
@@ -164,7 +165,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		await debugService.debugFunction(uri, functionInfo);
 	});
 
+	// Register the step over (next) command
+	const stepOverCommand = vscode.commands.registerCommand('pymonitor.stepOver', async () => {
+		const debugService = DebuggerService.getInstance();
+		await debugService.stepOver();
+	});
+
 	context.subscriptions.push(debugFunctionCommand);
+	context.subscriptions.push(stepOverCommand);
 
 	// Register a document change event listener for Python files
 	const documentListener = vscode.workspace.onDidOpenTextDocument(async (document) => {

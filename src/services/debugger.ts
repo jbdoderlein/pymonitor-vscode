@@ -74,6 +74,9 @@ export class DebuggerService {
                 return false;
             }
 
+            // Ensure there's a breakpoint at the function start
+            await this.ensureBreakpointAtFunction(uri, functionInfo);
+
             // Prompt user to choose how to provide function inputs
             const inputOption = await vscode.window.showQuickPick(
                 [
@@ -154,6 +157,51 @@ export class DebuggerService {
             debugLog('Error starting debug session:', error);
             vscode.window.showErrorMessage(`Failed to start debug session: ${error}`);
             return false;
+        }
+    }
+
+    /**
+     * Ensure a breakpoint exists at the start of the function
+     */
+    private async ensureBreakpointAtFunction(uri: vscode.Uri, functionInfo: FunctionInfo): Promise<void> {
+        try {
+            // Check if there's already a breakpoint at the function location
+            const existingBreakpoints = vscode.debug.breakpoints;
+            const functionStartLine = functionInfo.range.start.line;
+            
+            // Check if any breakpoint already exists at this location
+            const breakpointExists = existingBreakpoints.some(bp => {
+                if (bp instanceof vscode.SourceBreakpoint) {
+                    const location = bp.location;
+                    return location.uri.toString() === uri.toString() && 
+                           location.range.start.line === functionStartLine;
+                }
+                return false;
+            });
+            
+            // If no breakpoint exists, add one
+            if (!breakpointExists) {
+                debugLog(`Adding breakpoint at start of function ${functionInfo.name} (line ${functionStartLine + 1})`);
+                const breakpoint = new vscode.SourceBreakpoint(
+                    new vscode.Location(
+                        uri,
+                        new vscode.Position(functionStartLine, 0)
+                    )
+                );
+                vscode.debug.addBreakpoints([breakpoint]);
+                
+                // Inform the user
+                vscode.window.showInformationMessage(
+                    `Added breakpoint at the start of function ${functionInfo.name}`
+                );
+            } else {
+                debugLog(`Breakpoint already exists at function ${functionInfo.name}`);
+            }
+        } catch (error) {
+            debugLog('Error ensuring breakpoint at function:', error);
+            vscode.window.showWarningMessage(
+                `Could not add breakpoint at function ${functionInfo.name}: ${error}`
+            );
         }
     }
 
@@ -375,6 +423,28 @@ export class DebuggerService {
         } catch (error) {
             debugLog('Error creating wrapper file:', error);
             return null;
+        }
+    }
+
+    /**
+     * Step over (next) in the current debug session
+     */
+    public async stepOver(): Promise<boolean> {
+        try {
+            const activeSession = vscode.debug.activeDebugSession;
+            if (!activeSession) {
+                vscode.window.showErrorMessage('No active debug session found');
+                return false;
+            }
+
+            // Execute 'next' command on the active thread
+            // Assuming thread ID 1, which is typically the main thread
+            await activeSession.customRequest('next', { threadId: 1 });
+            return true;
+        } catch (error) {
+            debugLog('Error executing step over command:', error);
+            vscode.window.showErrorMessage(`Failed to execute step over: ${error}`);
+            return false;
         }
     }
 } 

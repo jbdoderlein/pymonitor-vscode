@@ -33,7 +33,7 @@ export class ConfigService {
         const config = vscode.workspace.getConfiguration('pymonitor');
         return {
             apiBaseUrl: config.get<string>('apiBaseUrl', 'http://localhost'),
-            serverPort: config.get<number>('serverPort', 5000),
+            serverPort: config.get<number>('serverPort', 8000),
             refreshInterval: config.get<number>('refreshInterval', 5000),
             maxRetries: config.get<number>('maxRetries', 3),
             timeout: config.get<number>('timeout', 30000)

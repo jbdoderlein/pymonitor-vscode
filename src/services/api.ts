@@ -5,8 +5,6 @@ import { ConfigService } from './config';
 
 const config = ConfigService.getInstance();
 
-const API_BASE_URL = 'http://localhost:5000';
-
 export async function retryFetch(url: string, maxRetries: number = 3): Promise<Response> {
     for (let i = 0; i < maxRetries; i++) {
         try {
@@ -69,7 +67,7 @@ export async function getFunctionTraces(callId: string): Promise<FunctionData | 
 
 export async function getObjectGraph(): Promise<ObjectGraphResponse | null> {
     try {
-        const response = await retryFetch('http://localhost:5000/api/object-graph');
+        const response = await retryFetch(`${config.getApiUrl()}/api/object-graph`);
         const data = await response.json() as ObjectGraphResponse;
         if (data.error) {
             throw new Error(data.error);
