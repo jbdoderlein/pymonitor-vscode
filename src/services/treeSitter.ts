@@ -31,7 +31,9 @@ export function parsePythonFile(document: vscode.TextDocument): FunctionInfo[] {
     for (const node of functionNodes) {
         const functionName = node.child(1)?.text;
         const functionParamsList = node.child(2);
-        const functionParams = functionParamsList?.children.map(param => param.text).join(', ');
+        const functionParams = functionParamsList?.children
+        .filter(param => param.type === 'identifier' || param.type === 'argument')
+        .map(param => param.text);
         
         if (!functionName || !functionParams) {
             continue;
@@ -45,7 +47,7 @@ export function parsePythonFile(document: vscode.TextDocument): FunctionInfo[] {
         const functionInfo: FunctionInfo = {
             name: functionName,
             range: functionRange,
-            params: functionParams.split(',').map(param => param.trim())
+            params: functionParams.map(param => param.trim())
         };
 
         functions.push(functionInfo);
