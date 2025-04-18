@@ -11,7 +11,8 @@
         if (message.command === 'dataReloaded') {
             console.log('Data reloaded, reinitializing event listeners');
             resetReloadButton();
-            setTimeout(initializeEventListeners, 100); // Small delay to ensure DOM is updated
+            // Ensure DOM is updated before attaching event listeners
+            setTimeout(initializeEventListeners, 200); // Increased delay to ensure DOM is fully updated
         }
     });
 
@@ -43,8 +44,18 @@
     }
     
     function initializeEventListeners() {
-        // Add event listeners for stack trace exploration
+        console.log('Initializing event listeners');
+        
+        // First, remove any existing event listeners
         document.querySelectorAll('.explore-stack-trace').forEach(button => {
+            // Clone and replace the button to remove all existing event listeners
+            const newButton = button.cloneNode(true);
+            button.parentNode.replaceChild(newButton, button);
+        });
+        
+        // Then add fresh event listeners
+        document.querySelectorAll('.explore-stack-trace').forEach(button => {
+            console.log('Adding listener to button with function ID:', button.getAttribute('data-function-id'));
             button.addEventListener('click', event => {
                 const functionId = button.getAttribute('data-function-id');
                 console.log('Explore stack trace clicked for function:', functionId);

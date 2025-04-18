@@ -38,6 +38,22 @@
       {
         "command": "pymonitor.stepOver",
         "title": "PyMonitor: Debug Step Over (Next)"
+      },
+      {
+        "command": "pymonitor.evaluate",
+        "title": "PyMonitor: Evaluate Expression in Debug Context"
+      },
+      {
+        "command": "pymonitor.goToSnapshotState",
+        "title": "PyMonitor: Go To Snapshot State"
+      },
+      {
+        "command": "pymonitor.gotoLine",
+        "title": "PyMonitor: Go To Line in Debug Session"
+      },
+      {
+        "command": "pymonitor.gotoLineAndLoadState",
+        "title": "PyMonitor: Navigate to Line and Load Snapshot State"
       }
     ],
     "codeLens": {

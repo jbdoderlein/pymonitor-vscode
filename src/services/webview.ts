@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { FunctionData, StackTraceResponse } from '../types';
 import { getWebviewContent } from '../utils/webview';
-import { highlightLine } from '../utils/highlight';
+import { highlightLine, clearHighlight } from '../utils/highlight';
 import { state, debugLog } from './state';
 import { getStackTrace, getFunctionTraces, getFunctionData } from './api';
 
@@ -36,19 +36,27 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
             debugLog('Received message from webview:', message);
             if (message.command === 'exploreStackTrace') {
                 console.log('Received stack trace exploration request for function:', message.functionId);
-                const functionId = message.functionId;
-                const functionData = functions.find(f => f.id === functionId);
-                if (functionData) {
+                const functionId = parseInt(message.functionId);
+                
+                // First, check if the function is in our current set
+                let functionData = functions.find(f => f.id === functionId);
+                
+                // If not found in the current set, check in the most recent data
+                if (!functionData && state.currentFunctionData) {
+                    functionData = state.currentFunctionData.find(f => f.id === functionId);
+                }
+                
+                // Either way, try to explore the stack trace if the ID is provided
+                try {
                     await exploreStackTrace(functionId, context);
+                } catch (error) {
+                    console.error('Error exploring stack trace:', error);
+                    vscode.window.showErrorMessage(`Failed to explore stack trace for function ID ${functionId}`);
                 }
             } else if (message.command === 'backToFunctions' && state.currentFunctionData) {
                 debugLog('Going back to functions list');
                 // Remove highlight when going back to function list
-                if (state.currentHighlight) {
-                    state.currentHighlight.dispose();
-                    state.currentHighlight = null;
-                    state.currentLine = null;
-                }
+                clearHighlight();
                 state.isInStackTraceView = false;
                 updateFunctionDetailsPanel(state.currentFunctionData, context);
             } else if (message.command === 'highlightLine' && state.currentEditor) {
@@ -57,6 +65,15 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
             } else if (message.command === 'reloadFunctionData') {
                 debugLog('Reloading function data');
                 await reloadFunctionData(context);
+            } else if (message.command === 'goToSnapshotState') {
+                console.log('Go to snapshot state:', message.snapshotId, 'DB path:', message.dbPath);
+                
+                // Call the goToSnapshotState command
+                if (message.snapshotId !== undefined && message.dbPath) {
+                    vscode.commands.executeCommand('pymonitor.goToSnapshotState', message.snapshotId, message.dbPath);
+                } else {
+                    console.error('Missing required parameters for goToSnapshotState');
+                }
             }
         });
 
@@ -95,17 +112,25 @@ async function reloadFunctionData(context: vscode.ExtensionContext): Promise<voi
             // If in stack trace view, go back to function list
             if (state.isInStackTraceView) {
                 state.isInStackTraceView = false;
+                
+                // Clear any existing highlights
+                clearHighlight();
             }
             
             // Update the panel with new data
             updateFunctionDetailsPanel(refreshedData, context);
             
-            // Notify the webview that data has been reloaded
-            state.functionDetailsPanel.webview.postMessage({
-                command: 'dataReloaded'
-            });
-            
-            debugLog('Function data reloaded successfully');
+            // Give the webview a moment to update before sending the message
+            setTimeout(() => {
+                if (state.functionDetailsPanel) {
+                    // Notify the webview that data has been reloaded
+                    state.functionDetailsPanel.webview.postMessage({
+                        command: 'dataReloaded'
+                    });
+                    
+                    debugLog('Function data reloaded successfully');
+                }
+            }, 100);
         }
     } catch (error) {
         console.error('Error reloading function data:', error);
@@ -171,7 +196,8 @@ function updateFunctionDetailsPanel(functions: FunctionData[], context: vscode.E
     state.functionDetailsPanel.webview.html = finalHtml;
 }
 
-async function exploreStackTrace(functionId: string, context: vscode.ExtensionContext) {
+// Export the exploreStackTrace function so it can be used by the extension
+export async function exploreStackTrace(functionId: number, context: vscode.ExtensionContext) {
     try {
         const data = await getStackTrace(functionId);
         if (!data) {
@@ -191,43 +217,48 @@ async function exploreStackTrace(functionId: string, context: vscode.ExtensionCo
         }
 
         // Get the webview content
-        const htmlContent = getWebviewContent(state.functionDetailsPanel.webview, 'html/stackTrace.html', context);
+        const htmlContent = getWebviewContent(state.functionDetailsPanel.webview, 'html/stackRecording.html', context);
         
         // Generate the stack trace content
         const content = `
             <div class="stack-trace-container">
                 <div class="header">
-                    <h3>${data.function_name}</h3>
-                    <div class="file-info">${data.file}:${data.line}</div>
+                    <h3>${data.function.name}</h3>
+                    <div class="file-info">${data.function.file}:${data.function.line}</div>
                 </div>
                 <div class="timeline">
                     <h4>Execution Timeline</h4>
                     <div class="timeline-controls">
-                        <button class="timeline-button" id="prevButton" ${data.snapshots.length <= 1 ? 'disabled' : ''}>
+                        <button class="timeline-button" id="prevButton" ${data.frames.length <= 1 ? 'disabled' : ''}>
                             <span class="codicon codicon-chevron-left"></span> Previous
                         </button>
                         <div class="timeline-slider">
                             <input type="range" 
                                    id="timelineSlider" 
                                    min="0" 
-                                   max="${data.snapshots.length - 1}" 
+                                   max="${data.frames.length - 1}" 
                                    value="0"
                                    step="1">
                             <div class="timeline-info">
-                                Step <span id="currentStep">1</span> of ${data.snapshots.length}
+                                Step <span id="currentStep">1</span> of ${data.frames.length}
                             </div>
                         </div>
-                        <button class="timeline-button" id="nextButton" ${data.snapshots.length <= 1 ? 'disabled' : ''}>
+                        <button class="timeline-button" id="nextButton" ${data.frames.length <= 1 ? 'disabled' : ''}>
                             Next <span class="codicon codicon-chevron-right"></span>
+                        </button>
+                    </div>
+                    <div class="debug-actions">
+                        <button class="debug-action-button" id="goToStateButton" disabled>
+                            <span class="codicon codicon-debug-step-into"></span> Go to this state
                         </button>
                     </div>
                     <div id="currentFrame" class="frame">
                         <div class="frame-header">
-                            <span class="frame-line">Line ${data.snapshots[0].line}</span>
-                            <span class="frame-time">${new Date(data.snapshots[0].timestamp).toLocaleTimeString()}</span>
+                            <span class="frame-line">Line ${data.frames[0].line}</span>
+                            <span class="frame-time">${new Date(data.frames[0].timestamp).toLocaleTimeString()}</span>
                         </div>
                         <div class="frame-locals">
-                            ${Object.entries(data.snapshots[0].locals).map(([name, value]: [string, any]) => `
+                            ${Object.entries(data.frames[0].locals).map(([name, value]: [string, any]) => `
                                 <div class="local-variable">
                                     <span class="var-name">${name}:</span>
                                     <span class="var-value">${value.value}</span>
@@ -237,7 +268,7 @@ async function exploreStackTrace(functionId: string, context: vscode.ExtensionCo
                     </div>
                 </div>
                 <div class="local-timeline">
-                    <h4>Local Timeline for Line ${data.snapshots[0].line}</h4>
+                    <h4>Local Timeline for Line ${data.frames[0].line}</h4>
                     <div class="timeline-controls">
                         <button class="timeline-button" id="localPrevButton" disabled>
                             <span class="codicon codicon-chevron-left"></span> Previous
@@ -264,13 +295,32 @@ async function exploreStackTrace(functionId: string, context: vscode.ExtensionCo
         // Replace the content placeholder in the template
         const finalHtml = htmlContent.replace('<div id="content"></div>', `<div id="content">${content}</div>`);
 
-        state.functionDetailsPanel.title = `Stack Trace - ${data.function_name}`;
+        state.functionDetailsPanel.title = `Stack Recording - ${data.function.name}`;
         state.functionDetailsPanel.webview.html = finalHtml;
         
-        // Send snapshots data to the webview
+        // Get the workspace folder to determine the database path
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        const dbPath = workspaceFolder ? vscode.Uri.joinPath(workspaceFolder.uri, 'main.db').fsPath : '';
+        
+        // Check if there's an active debug session
+        const isDebugging = !!vscode.debug.activeDebugSession;
+        
+        // Send snapshots data and additional info to the webview
         state.functionDetailsPanel.webview.postMessage({
             command: 'setSnapshots',
-            snapshots: data.snapshots
+            snapshots: data.frames
+        });
+        
+        // Send the database path
+        state.functionDetailsPanel.webview.postMessage({
+            command: 'setDbPath',
+            dbPath: dbPath
+        });
+        
+        // Send debugging status
+        state.functionDetailsPanel.webview.postMessage({
+            command: 'debugSessionStatus',
+            isDebugging: isDebugging
         });
         
         state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);

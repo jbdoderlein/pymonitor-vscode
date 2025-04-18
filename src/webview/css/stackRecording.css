@@ -198,4 +198,171 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .local-timeline .var-value {
     color: var(--vscode-editor-foreground);
     word-break: break-all;
+}
+
+/* Variables change table styles */
+.variables-change-table {
+    margin-top: 1.5rem;
+    overflow-x: auto;
+}
+
+.variables-change-table h4 {
+    margin-bottom: 1rem;
+    color: var(--vscode-editor-foreground);
+}
+
+.var-changes-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin-bottom: 1rem;
+}
+
+.var-changes-table th {
+    border-bottom: 1px solid var(--vscode-panel-border);
+    padding: 8px;
+    text-align: left;
+    color: var(--vscode-editor-foreground);
+    background-color: var(--vscode-editor-inactiveSelectionBackground);
+    position: sticky;
+    top: 0;
+}
+
+.var-changes-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--vscode-panelSection-border, rgba(128, 128, 128, 0.2));
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.var-changes-table tr:hover {
+    background-color: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.var-changes-table tr.current-snapshot {
+    background-color: var(--vscode-editor-selectionBackground);
+}
+
+.var-changes-table tr.current-snapshot:hover {
+    background-color: var(--vscode-editor-selectionHighlightBackground, rgba(173, 214, 255, 0.15));
+}
+
+/* Animation for data updated during debugging */
+@keyframes data-updated-flash {
+    0% { 
+        box-shadow: 0 0 0 0 rgba(65, 184, 131, 0.2);
+    }
+    70% {
+        box-shadow: 0 0 0 3px rgba(65, 184, 131, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(65, 184, 131, 0);
+    }
+}
+
+.data-updated {
+    animation: data-updated-flash 0.5s ease-out;
+    border-radius: 6px;
+}
+
+/* More visible flash animation */
+@keyframes data-flash {
+    0% { background-color: rgba(65, 184, 131, 0.1); }
+    50% { background-color: rgba(65, 184, 131, 0.3); }
+    100% { background-color: rgba(65, 184, 131, 0.1); }
+}
+
+.data-flash {
+    animation: data-flash 0.5s ease-out;
+}
+
+/* Highlight for frame count updates */
+@keyframes count-updated {
+    0% { color: var(--vscode-editor-foreground); }
+    50% { color: var(--vscode-statusBarItem-errorForeground); font-weight: bold; }
+    100% { color: var(--vscode-editor-foreground); }
+}
+
+.count-updated {
+    animation: count-updated 0.8s ease-out;
+}
+
+/* Debug overlay showing update timestamp */
+.debug-overlay {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: var(--vscode-notifications-background);
+    color: var(--vscode-notifications-foreground);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 9999;
+    transition: opacity 0.3s ease-in-out;
+    border-left: 3px solid var(--vscode-statusBarItem-warningBackground);
+}
+
+/* Add a subtle indicator for realtime debugging */
+.stack-trace-container::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--vscode-statusBarItem-warningBackground);
+    margin-right: 8px;
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    box-shadow: 0 0 3px var(--vscode-statusBarItem-warningBackground);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Debug actions container */
+.debug-actions {
+    margin-top: 12px;
+    display: flex;
+    justify-content: center;
+}
+
+/* Debug action buttons */
+.debug-action-button {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 3px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.debug-action-button:hover:not([disabled]) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.debug-action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.debug-action-button .codicon {
+    margin-right: 6px;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 0.3;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+    100% {
+        opacity: 0.3;
+        transform: scale(1);
+    }
 } 

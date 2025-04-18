@@ -6,7 +6,7 @@ export interface ApiResponse<T> {
 }
 
 export interface FunctionData {
-    id: string;
+    id: number;
     function: string;
     file: string;
     line: number;
@@ -45,27 +45,45 @@ export interface StackFrame {
 }
 
 export interface StackTraceResponse {
-    function_name: string;
-    file: string;
-    line: number;
-    code: {
-        content: string;
-        first_line_no: number;
-        module_path: string;
-        type: string;
+    function: {
+        id: string;
+        name: string;
+        file: string;
+        line: number;
+        time: string;
+        end_time: string;
+        code_definition_id: string;
+        code_version_id: number;
+        code: {
+            content: string;
+            module_path: string;
+            type: string;
+            name: string;
+        };
+        call_metadata: any;
     };
-    end_time: string;
-    function_id: number;
-    snapshots: Array<{
-        globals: Record<string, any>;
-        id: number;
+    frames: Array<{
+        function: string;
+        file: string;
         line: number;
         locals: Record<string, {
-            code: any;
-            type: string;
             value: string;
+            type: string;
+            code: any;
         }>;
+        globals: Record<string, any>;
+        snapshot_id: string;
         timestamp: string;
+        previous_snapshot_id: string | null;
+        next_snapshot_id: string | null;
+        locals_refs: Record<string, string>;
+        globals_refs: Record<string, string>;
+        code: {
+            content: string;
+            module_path: string;
+            type: string;
+            name: string;
+        };
+        code_version_id: number;
     }>;
-    start_time: string;
 } 

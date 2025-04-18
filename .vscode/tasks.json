@@ -10,7 +10,7 @@
                 "npm: watch:esbuild"
             ],
             "presentation": {
-                "reveal": "never"
+                "reveal": "always"
             },
             "group": {
                 "kind": "build",

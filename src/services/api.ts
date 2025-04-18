@@ -79,9 +79,9 @@ export async function getObjectGraph(): Promise<ObjectGraphResponse | null> {
     }
 }
 
-export async function getStackTrace(functionId: string): Promise<StackTraceResponse | null> {
+export async function getStackTrace(functionId: number): Promise<StackTraceResponse | null> {
     try {
-        const response = await fetch(`${config.getApiUrl()}/api/stack-trace/${functionId}`);
+        const response = await fetch(`${config.getApiUrl()}/api/stack-recording/${functionId}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }

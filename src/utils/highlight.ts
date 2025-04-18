@@ -13,9 +13,12 @@ export function highlightLine(editor: vscode.TextEditor, line: number) {
         currentHighlight = null;
     }
 
-    // Create new highlight
+    // Create new highlight with a distinct color
     const decorationType = vscode.window.createTextEditorDecorationType({
-        backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+        backgroundColor: new vscode.ThemeColor('editor.stackFrameHighlightBackground'),
+        borderColor: new vscode.ThemeColor('editorInfo.foreground'),
+        borderStyle: 'solid',
+        borderWidth: '0 0 0 2px',
         isWholeLine: true,
     });
 
@@ -35,4 +38,22 @@ export function highlightLine(editor: vscode.TextEditor, line: number) {
     }, 100);
 
     currentHighlight = decorationType;
+    state.currentHighlight = decorationType;
+}
+
+/**
+ * Clear any existing highlight
+ */
+export function clearHighlight() {
+    if (currentHighlight) {
+        currentHighlight.dispose();
+        currentHighlight = null;
+    }
+    
+    if (state.currentHighlight) {
+        state.currentHighlight.dispose();
+        state.currentHighlight = null;
+    }
+    
+    state.currentLine = null;
 } 
