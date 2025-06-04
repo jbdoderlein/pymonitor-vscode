@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ApiResponse, FunctionData, ObjectGraphResponse, StackTraceResponse } from '../types';
+import { ApiResponse, FunctionData, ObjectGraphResponse, StackTraceResponse, SnapshotDetails, SessionSummary, SessionDetails } from '../types';
 import { state, debugLog } from './state';
 import { ConfigService } from './config';
 
@@ -54,20 +54,21 @@ export async function getFunctionData(filePath: string): Promise<FunctionData[] 
     }
 }
 
-export async function getFunctionTraces(callId: string): Promise<FunctionData | null> {
+export async function getFunctionTraces(callId: string | number): Promise<FunctionData | null> {
     try {
         const response = await retryFetch(`${config.getApiUrl()}/api/function-call/${callId}`);
-        const data = await response.json() as FunctionData;
-        return data;
+        const data = await response.json() as { function_call: FunctionData };
+        return data.function_call;
     } catch (error) {
         console.error('Error fetching function traces:', error);
         return null;
     }
 }
 
-export async function getObjectGraph(): Promise<ObjectGraphResponse | null> {
+export async function getObjectGraph(showIsolated: boolean = false): Promise<ObjectGraphResponse | null> {
     try {
-        const response = await retryFetch(`${config.getApiUrl()}/api/object-graph`);
+        const url = `${config.getApiUrl()}/api/object-graph${showIsolated ? '?show_isolated=true' : ''}`;
+        const response = await retryFetch(url);
         const data = await response.json() as ObjectGraphResponse;
         if (data.error) {
             throw new Error(data.error);
@@ -79,7 +80,7 @@ export async function getObjectGraph(): Promise<ObjectGraphResponse | null> {
     }
 }
 
-export async function getStackTrace(functionId: number): Promise<StackTraceResponse | null> {
+export async function getStackTrace(functionId: number | string): Promise<StackTraceResponse | null> {
     try {
         const response = await fetch(`${config.getApiUrl()}/api/stack-recording/${functionId}`);
         if (!response.ok) {
@@ -89,6 +90,48 @@ export async function getStackTrace(functionId: number): Promise<StackTraceRespo
         return data;
     } catch (error) {
         console.error('Error fetching stack trace:', error);
+        return null;
+    }
+}
+
+export async function getSnapshotDetails(snapshotId: string): Promise<SnapshotDetails | null> {
+    try {
+        const response = await fetch(`${config.getApiUrl()}/api/snapshot/${snapshotId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json() as SnapshotDetails;
+        return data;
+    } catch (error) {
+        console.error('Error fetching snapshot details:', error);
+        return null;
+    }
+}
+
+export async function getSessionsList(): Promise<SessionSummary[] | null> {
+    try {
+        const response = await fetch(`${config.getApiUrl()}/api/sessions`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json() as { sessions: SessionSummary[] };
+        return data.sessions;
+    } catch (error) {
+        console.error('Error fetching sessions list:', error);
+        return null;
+    }
+}
+
+export async function getSessionDetails(sessionId: number | string): Promise<SessionDetails | null> {
+    try {
+        const response = await fetch(`${config.getApiUrl()}/api/session/${sessionId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json() as SessionDetails;
+        return data;
+    } catch (error) {
+        console.error('Error fetching session details:', error);
         return null;
     }
 } 

@@ -3,7 +3,7 @@
 {
 	"version": "2.0.0",
 	"tasks": [
-		{
+        {
             "label": "watch",
             "dependsOn": [
                 "npm: watch:tsc",
@@ -15,7 +15,8 @@
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
+            },
+            "problemMatcher": []
         },
         {
             "type": "npm",
@@ -29,7 +30,7 @@
                 "reveal": "never"
             }
         },
-		{
+        {
             "type": "npm",
             "script": "watch:tsc",
             "group": "build",
@@ -40,25 +41,6 @@
                 "group": "watch",
                 "reveal": "never"
             }
-        },
-		{
-			"type": "npm",
-			"script": "watch-tests",
-			"problemMatcher": "$tsc-watch",
-			"isBackground": true,
-			"presentation": {
-				"reveal": "never",
-				"group": "watchers"
-			},
-			"group": "build"
-		},
-		{
-			"label": "tasks: watch-tests",
-			"dependsOn": [
-				"npm: watch",
-				"npm: watch-tests"
-			],
-			"problemMatcher": []
-		}
-	]
+        }
+    ]
 }

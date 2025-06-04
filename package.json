@@ -54,6 +54,14 @@
       {
         "command": "pymonitor.gotoLineAndLoadState",
         "title": "PyMonitor: Navigate to Line and Load Snapshot State"
+      },
+      {
+        "command": "pymonitor.startLiveRecording",
+        "title": "PyMonitor: Start Live Recording"
+      },
+      {
+        "command": "pymonitor.stopLiveRecording",
+        "title": "PyMonitor: Stop Live Recording"
       }
     ],
     "codeLens": {

@@ -1,23 +1,23 @@
 (function() {
     const vscode = acquireVsCodeApi();
 
-    // Get DOM elements
-    const backButton = document.querySelector('.back-button');
-    const timelineSlider = document.getElementById('timelineSlider');
-    const prevButton = document.getElementById('prevButton');
-    const nextButton = document.getElementById('nextButton');
-    const currentStepDisplay = document.getElementById('currentStep');
-    const currentFrame = document.getElementById('currentFrame');
+    // Get DOM elements (will be set after content loads)
+    let backButton = null;
+    let timelineSlider = null;
+    let prevButton = null;
+    let nextButton = null;
+    let currentStepDisplay = null;
+    let currentFrame = null;
     
     // Local timeline elements
-    const localTimelineSlider = document.getElementById('localTimelineSlider');
-    const localPrevButton = document.getElementById('localPrevButton');
-    const localNextButton = document.getElementById('localNextButton');
-    const localCurrentStepDisplay = document.getElementById('localCurrentStep');
-    const localTotalStepsDisplay = document.getElementById('localTotalSteps');
+    let localTimelineSlider = null;
+    let localPrevButton = null;
+    let localNextButton = null;
+    let localCurrentStepDisplay = null;
+    let localTotalStepsDisplay = null;
     
     // Debug action elements
-    const goToStateButton = document.getElementById('goToStateButton');
+    let goToStateButton = null;
     
     // Store snapshots data and current steps
     let snapshots = [];
@@ -33,111 +33,143 @@
         console.log(...args);
     }
     
-    // Handle back button click
-    if (backButton) {
-        backButton.addEventListener('click', () => {
-            vscode.postMessage({
-                command: 'backToFunctions'
-            });
-        });
+    // Initialize DOM elements and event listeners after content is loaded
+    function initializeEventListeners() {
+        debugLog('Initializing event listeners');
+        
+        // Get DOM elements
+        backButton = document.getElementById('backButton');
+        timelineSlider = document.getElementById('timelineSlider');
+        prevButton = document.getElementById('prevButton');
+        nextButton = document.getElementById('nextButton');
+        currentStepDisplay = document.getElementById('currentStep');
+        currentFrame = document.getElementById('currentFrame');
+        
+        // Local timeline elements
+        localTimelineSlider = document.getElementById('localTimelineSlider');
+        localPrevButton = document.getElementById('localPrevButton');
+        localNextButton = document.getElementById('localNextButton');
+        localCurrentStepDisplay = document.getElementById('localCurrentStep');
+        localTotalStepsDisplay = document.getElementById('localTotalSteps');
+        
+        // Debug action elements
+        goToStateButton = document.getElementById('goToStateButton');
+        
+        setupEventListeners();
     }
     
-    // Handle global timeline slider change
-    if (timelineSlider) {
-        timelineSlider.addEventListener('input', (e) => {
-            const value = parseInt(e.target.value);
-            if (value !== currentStep) {
-                updateCurrentStepAndUI(value);
-            }
-        });
-    }
-    
-    // Handle global previous button click
-    if (prevButton) {
-        prevButton.addEventListener('click', () => {
-            if (currentStep > 0) {
-                // Simply move to the previous step chronologically
-                updateCurrentStepAndUI(currentStep - 1);
-            }
-        });
-    }
-    
-    // Handle global next button click
-    if (nextButton) {
-        nextButton.addEventListener('click', () => {
-            if (currentStep < snapshots.length - 1) {
-                // Simply move to the next step chronologically
-                debugLog('Before next button click:', currentStep);
-                updateCurrentStepAndUI(currentStep + 1);
-                debugLog('After next button click:', currentStep);
-            }
-        });
-    }
-
-    // Handle local timeline slider change
-    if (localTimelineSlider) {
-        localTimelineSlider.addEventListener('input', (event) => {
-            const value = parseInt(event.target.value);
-            if (value !== localStep && localSnapshots.length > 0) {
-                localStep = value;
-                // Map local step to global step
-                const snapshot = localSnapshots[localStep];
-                const globalIndex = snapshots.findIndex(s => s.snapshot_id === snapshot.snapshot_id);
-                
-                if (globalIndex !== -1 && globalIndex !== currentStep) {
-                    updateCurrentStepAndUI(globalIndex);
-                }
-            }
-        });
-    }
-    
-    // Handle local previous button click
-    if (localPrevButton) {
-        localPrevButton.addEventListener('click', () => {
-            if (localStep > 0 && localSnapshots.length > 0) {
-                localStep--;
-                // Map local step to global step
-                const snapshot = localSnapshots[localStep];
-                const globalIndex = snapshots.findIndex(s => s.snapshot_id === snapshot.snapshot_id);
-                
-                if (globalIndex !== -1 && globalIndex !== currentStep) {
-                    updateCurrentStepAndUI(globalIndex);
-                }
-            }
-        });
-    }
-    
-    // Handle local next button click
-    if (localNextButton) {
-        localNextButton.addEventListener('click', () => {
-            if (localStep < localSnapshots.length - 1 && localSnapshots.length > 0) {
-                localStep++;
-                // Map local step to global step
-                const snapshot = localSnapshots[localStep];
-                const globalIndex = snapshots.findIndex(s => s.snapshot_id === snapshot.snapshot_id);
-                
-                if (globalIndex !== -1 && globalIndex !== currentStep) {
-                    updateCurrentStepAndUI(globalIndex);
-                }
-            }
-        });
-    }
-    
-    // Handle "Go to this state" button click
-    if (goToStateButton) {
-        goToStateButton.addEventListener('click', () => {
-            if (snapshots.length > 0 && currentStep < snapshots.length) {
-                const snapshot = snapshots[currentStep];
-                debugLog(`Requesting to go to snapshot state: ${snapshot.snapshot_id}`);
-                
-                // Send message to extension to execute the goToSnapshotState command
+    // Set up all event listeners
+    function setupEventListeners() {
+        // Handle back button click
+        if (backButton) {
+            debugLog('Setting up back button event listener');
+            backButton.addEventListener('click', () => {
+                debugLog('Back button clicked, sending backToFunctions message');
                 vscode.postMessage({
-                    command: 'goToSnapshotState',
-                    snapshotId: snapshot.snapshot_id,
-                    dbPath: dbPath
+                    command: 'backToFunctions'
                 });
-            }
-        });
+            });
+        } else {
+            debugLog('Back button not found');
+        }
+    
+        // Handle timeline slider change
+        if (timelineSlider) {
+            timelineSlider.addEventListener('input', (event) => {
+                const newStep = parseInt(event.target.value);
+                if (newStep !== currentStep && newStep >= 0 && newStep < snapshots.length) {
+                    updateCurrentStepAndUI(newStep);
+                }
+            });
+        }
+        
+        // Handle previous button click
+        if (prevButton) {
+            prevButton.addEventListener('click', () => {
+                if (currentStep > 0) {
+                    updateCurrentStepAndUI(currentStep - 1);
+                }
+            });
+        }
+        
+        // Handle next button click
+        if (nextButton) {
+            nextButton.addEventListener('click', () => {
+                if (currentStep < snapshots.length - 1) {
+                    updateCurrentStepAndUI(currentStep + 1);
+                }
+            });
+        }
+
+        // Handle local timeline slider change
+        if (localTimelineSlider) {
+            localTimelineSlider.addEventListener('input', (event) => {
+                const value = parseInt(event.target.value);
+                if (value !== localStep && localSnapshots.length > 0) {
+                    localStep = value;
+                    // Map local step to global step
+                    const snapshot = localSnapshots[localStep];
+                    const globalIndex = snapshots.findIndex(s => s.snapshot_id === snapshot.snapshot_id);
+                    
+                    if (globalIndex !== -1 && globalIndex !== currentStep) {
+                        updateCurrentStepAndUI(globalIndex);
+                    }
+                }
+            });
+        }
+        
+        // Handle local previous button click
+        if (localPrevButton) {
+            localPrevButton.addEventListener('click', () => {
+                if (localStep > 0 && localSnapshots.length > 0) {
+                    localStep--;
+                    // Map local step to global step
+                    const snapshot = localSnapshots[localStep];
+                    const globalIndex = snapshots.findIndex(s => s.snapshot_id === snapshot.snapshot_id);
+                    
+                    if (globalIndex !== -1 && globalIndex !== currentStep) {
+                        updateCurrentStepAndUI(globalIndex);
+                    }
+                }
+            });
+        }
+        
+        // Handle local next button click
+        if (localNextButton) {
+            localNextButton.addEventListener('click', () => {
+                if (localStep < localSnapshots.length - 1 && localSnapshots.length > 0) {
+                    localStep++;
+                    // Map local step to global step
+                    const snapshot = localSnapshots[localStep];
+                    const globalIndex = snapshots.findIndex(s => s.snapshot_id === snapshot.snapshot_id);
+                    
+                    if (globalIndex !== -1 && globalIndex !== currentStep) {
+                        updateCurrentStepAndUI(globalIndex);
+                    }
+                }
+            });
+        }
+        
+        // Handle "Go to this state" button click
+        if (goToStateButton) {
+            goToStateButton.addEventListener('click', () => {
+                if (snapshots.length > 0 && currentStep < snapshots.length) {
+                    const snapshot = snapshots[currentStep];
+                    debugLog(`Go to snapshot state feature disabled - database path not available`);
+                    
+                    // For now, just show a message that this feature is not available
+                    // Once we have the database path from the API, this can be re-enabled
+                    debugLog(`Snapshot ID: ${snapshot.snapshot_id} would be loaded if database path was available`);
+                    
+                    // Uncomment this when database path is available:
+                    // vscode.postMessage({
+                    //     command: 'goToSnapshotState',
+                    //     snapshotId: snapshot.snapshot_id,
+                    //     dbPath: dbPath
+                    // });
+                }
+            });
+        }
     }
     
     // Consolidated function to update current step and UI
@@ -195,6 +227,9 @@
                 snapshots = message.snapshots;
                 
                 currentStep = 0;
+                
+                // Initialize event listeners now that content is loaded
+                initializeEventListeners();
                 
                 if (timelineSlider) {
                     timelineSlider.value = currentStep;

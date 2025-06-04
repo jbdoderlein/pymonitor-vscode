@@ -13,6 +13,8 @@ import { state, debugLog } from './services/state';
 import { ConfigService } from './services/config';
 import { DebugFunctionCodeLensProvider } from './services/debugCodeLens';
 import { DebuggerService } from './services/debugger';
+import { LiveRecCodeLensProvider } from './services/liveRecCodeLens';
+import { LiveRecordingService } from './services/liveRecording';
 
 const execAsync = promisify(exec);
 const config = ConfigService.getInstance();
@@ -187,6 +189,13 @@ export async function activate(context: vscode.ExtensionContext) {
 		debugCodeLensProvider
 	));
 
+	// Register live recording code lens provider
+	const liveRecCodeLensProvider = new LiveRecCodeLensProvider();
+	context.subscriptions.push(vscode.languages.registerCodeLensProvider(
+		{ scheme: 'file', language: 'python' }, 
+		liveRecCodeLensProvider
+	));
+
 	// Debug function command
 	const debugFunctionCommand = vscode.commands.registerCommand('pymonitor.debugFunction', async (uri: vscode.Uri, functionInfo: any) => {
 		const debugService = DebuggerService.getInstance();
@@ -331,12 +340,28 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
+	// Register the live recording command
+	const startLiveRecordingCommand = vscode.commands.registerCommand('pymonitor.startLiveRecording', 
+		async (uri: vscode.Uri, func: any, previousExecutions: any) => {
+			const liveRecService = LiveRecordingService.getInstance();
+			await liveRecService.startLiveRecording(uri, func, previousExecutions);
+		}
+	);
+
+	// Register the stop live recording command
+	const stopLiveRecordingCommand = vscode.commands.registerCommand('pymonitor.stopLiveRecording', () => {
+		const liveRecService = LiveRecordingService.getInstance();
+		liveRecService.stopLiveRecording();
+	});
+
 	context.subscriptions.push(debugFunctionCommand);
 	context.subscriptions.push(stepOverCommand);
 	context.subscriptions.push(evaluateCommand);
 	context.subscriptions.push(goToSnapshotStateCommand);
 	context.subscriptions.push(gotoLineCommand);
 	context.subscriptions.push(gotoLineAndLoadStateCommand);
+	context.subscriptions.push(startLiveRecordingCommand);
+	context.subscriptions.push(stopLiveRecordingCommand);
 
 	// Track debugging session and update stack recording view
 	const debugStartListener = vscode.debug.onDidStartDebugSession(async (session) => {
@@ -484,8 +509,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		// Fetch fresh data directly from API without caching
 		try {
 			// Bypass command and call API directly to avoid any caching
-			const numericId = typeof functionId === 'string' ? parseInt(functionId) : functionId;
-			const freshData = await getStackTrace(numericId);
+			const freshData = await getStackTrace(functionId);
 			if (!freshData) {
 				console.log('No updated stack recording data found');
 				return;
@@ -516,12 +540,10 @@ export async function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 			
-			// Parse function ID if it's a string
-			const id = typeof functionId === 'string' ? parseInt(functionId) : functionId;
-			console.log(`Opening stack recording for function ID: ${id}`);
+			console.log(`Opening stack recording for function ID: ${functionId}`);
 			
 			// Use the exploreStackTrace function to open the view
-			await exploreStackTrace(id, extensionContext);
+			await exploreStackTrace(functionId, extensionContext);
 			return true;
 		} catch (error) {
 			console.error('Error opening stack recording:', error);
@@ -536,12 +558,10 @@ export async function activate(context: vscode.ExtensionContext) {
 				return null;
 			}
 			
-			// Parse function ID if it's a string
-			const id = typeof functionId === 'string' ? parseInt(functionId) : functionId;
-			console.log(`Directly refreshing stack recording for function ID: ${id}`);
+			console.log(`Directly refreshing stack recording for function ID: ${functionId}`);
 			
 			// Fetch fresh data from API without caching
-			const data = await getStackTrace(id);
+			const data = await getStackTrace(functionId);
 			if (!data) {
 				console.log('No updated stack recording data found');
 				return null;
@@ -686,4 +706,8 @@ export function deactivate() {
 	if (statusBarItem) {
 		statusBarItem.dispose();
 	}
+	
+	// Clean up live recording service
+	const liveRecService = LiveRecordingService.getInstance();
+	liveRecService.dispose();
 }

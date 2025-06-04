@@ -13,73 +13,102 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
         state.currentEditor = vscode.window.activeTextEditor;
     }
     
-    if (state.functionDetailsPanel && state.functionDetailsPanel.active) {
-        // Update existing panel
-        state.functionDetailsPanel.title = 'Function Details';
-        updateFunctionDetailsPanel(functions, context);
-        state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
-    } else {
-        // Create new panel
-        state.functionDetailsPanel = vscode.window.createWebviewPanel(
-            'functionDetails',
-            'Function Details',
-            vscode.ViewColumn.Beside,
-            {
-                enableScripts: true,
-                localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
-                retainContextWhenHidden: true
+    // Check if panel exists and is not disposed
+    if (state.functionDetailsPanel) {
+        try {
+            // Try to access the webview property - this will throw if disposed
+            const isAccessible = state.functionDetailsPanel.webview;
+            
+            if (state.functionDetailsPanel.active) {
+                // Update existing panel
+                state.functionDetailsPanel.title = 'Function Details';
+                updateFunctionDetailsPanel(functions, context);
+                state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+                return;
+            } else {
+                // Panel exists but is not active, reveal it
+                updateFunctionDetailsPanel(functions, context);
+                state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+                return;
             }
-        );
-
-        // Add message handler for the panel
-        state.functionDetailsPanel.webview.onDidReceiveMessage(async message => {
-            debugLog('Received message from webview:', message);
-            if (message.command === 'exploreStackTrace') {
-                console.log('Received stack trace exploration request for function:', message.functionId);
-                const functionId = parseInt(message.functionId);
-                
-                // First, check if the function is in our current set
-                let functionData = functions.find(f => f.id === functionId);
-                
-                // If not found in the current set, check in the most recent data
-                if (!functionData && state.currentFunctionData) {
-                    functionData = state.currentFunctionData.find(f => f.id === functionId);
-                }
-                
-                // Either way, try to explore the stack trace if the ID is provided
-                try {
-                    await exploreStackTrace(functionId, context);
-                } catch (error) {
-                    console.error('Error exploring stack trace:', error);
-                    vscode.window.showErrorMessage(`Failed to explore stack trace for function ID ${functionId}`);
-                }
-            } else if (message.command === 'backToFunctions' && state.currentFunctionData) {
-                debugLog('Going back to functions list');
-                // Remove highlight when going back to function list
-                clearHighlight();
-                state.isInStackTraceView = false;
-                updateFunctionDetailsPanel(state.currentFunctionData, context);
-            } else if (message.command === 'highlightLine' && state.currentEditor) {
-                // Only highlight lines when explicitly requested by the panel
-                highlightLine(state.currentEditor, message.line);
-            } else if (message.command === 'reloadFunctionData') {
-                debugLog('Reloading function data');
-                await reloadFunctionData(context);
-            } else if (message.command === 'goToSnapshotState') {
-                console.log('Go to snapshot state:', message.snapshotId, 'DB path:', message.dbPath);
-                
-                // Call the goToSnapshotState command
-                if (message.snapshotId !== undefined && message.dbPath) {
-                    vscode.commands.executeCommand('pymonitor.goToSnapshotState', message.snapshotId, message.dbPath);
-                } else {
-                    console.error('Missing required parameters for goToSnapshotState');
-                }
-            }
-        });
-
-        updateFunctionDetailsPanel(functions, context);
-        state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+        } catch (error) {
+            // Panel is disposed, clear the reference
+            debugLog('Webview panel is disposed, creating new one');
+            state.functionDetailsPanel = undefined;
+        }
     }
+    
+    // Create new panel
+    state.functionDetailsPanel = vscode.window.createWebviewPanel(
+        'functionDetails',
+        'Function Details',
+        vscode.ViewColumn.Beside,
+        {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview')],
+            retainContextWhenHidden: true
+        }
+    );
+
+    // Add disposal listener to clean up state
+    state.functionDetailsPanel.onDidDispose(() => {
+        debugLog('Webview panel disposed, clearing state');
+        state.functionDetailsPanel = undefined;
+        state.isInStackTraceView = false;
+        // Clear any existing highlights
+        clearHighlight();
+    });
+
+    // Add message handler for the panel
+    state.functionDetailsPanel.webview.onDidReceiveMessage(async message => {
+        debugLog('Received message from webview:', message);
+        if (message.command === 'exploreStackTrace') {
+            console.log('Received stack trace exploration request for function:', message.functionId);
+            const functionId = parseInt(message.functionId);
+            
+            // First, check if the function is in our current set
+            let functionData = functions.find(f => f.id === functionId);
+            
+            // If not found in the current set, check in the most recent data
+            if (!functionData && state.currentFunctionData) {
+                functionData = state.currentFunctionData.find(f => f.id === functionId);
+            }
+            
+            // Either way, try to explore the stack trace if the ID is provided
+            try {
+                await exploreStackTrace(functionId, context);
+            } catch (error) {
+                console.error('Error exploring stack trace:', error);
+                vscode.window.showErrorMessage(`Failed to explore stack trace for function ID ${functionId}`);
+            }
+        } else if (message.command === 'backToFunctions') {
+            debugLog('Going back to functions list');
+            // Remove highlight when going back to function list
+            clearHighlight();
+            state.isInStackTraceView = false;
+            if (state.currentFunctionData) {
+                updateFunctionDetailsPanel(state.currentFunctionData, context);
+            }
+        } else if (message.command === 'highlightLine' && state.currentEditor) {
+            // Only highlight lines when explicitly requested by the panel
+            highlightLine(state.currentEditor, message.line);
+        } else if (message.command === 'reloadFunctionData') {
+            debugLog('Reloading function data');
+            await reloadFunctionData(context);
+        } else if (message.command === 'goToSnapshotState') {
+            console.log('Go to snapshot state:', message.snapshotId, 'DB path:', message.dbPath);
+            
+            // Call the goToSnapshotState command
+            if (message.snapshotId !== undefined && message.dbPath) {
+                vscode.commands.executeCommand('pymonitor.goToSnapshotState', message.snapshotId, message.dbPath);
+            } else {
+                console.error('Missing required parameters for goToSnapshotState');
+            }
+        }
+    });
+
+    updateFunctionDetailsPanel(functions, context);
+    state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
 }
 
 /**
@@ -159,6 +188,7 @@ function updateFunctionDetailsPanel(functions: FunctionData[], context: vscode.E
             <div class="time-info">
                 <div>Start: ${new Date(func.start_time).toLocaleString()}</div>
                 <div>End: ${new Date(func.end_time).toLocaleString()}</div>
+                <div>Duration: ${func.duration.toFixed(3)}s</div>
             </div>
             <div class="section">
                 <h4>Arguments</h4>
@@ -183,9 +213,15 @@ function updateFunctionDetailsPanel(functions: FunctionData[], context: vscode.E
                 </div>
             </div>
             <div class="function-actions">
+                ${func.has_stack_recording ? `
                 <button class="action-button explore-stack-trace" data-function-id="${func.id}">
                     <span class="codicon codicon-debug"></span> Explore Stack Trace
                 </button>
+                ` : `
+                <button class="action-button explore-stack-trace" disabled>
+                    <span class="codicon codicon-debug"></span> No Stack Recording
+                </button>
+                `}
             </div>
         </div>
     `).join('');
@@ -197,7 +233,7 @@ function updateFunctionDetailsPanel(functions: FunctionData[], context: vscode.E
 }
 
 // Export the exploreStackTrace function so it can be used by the extension
-export async function exploreStackTrace(functionId: number, context: vscode.ExtensionContext) {
+export async function exploreStackTrace(functionId: number | string, context: vscode.ExtensionContext) {
     try {
         const data = await getStackTrace(functionId);
         if (!data) {
@@ -213,6 +249,15 @@ export async function exploreStackTrace(functionId: number, context: vscode.Exte
         state.isInStackTraceView = true;
 
         if (!state.functionDetailsPanel) {
+            vscode.window.showErrorMessage('Function details panel is not available');
+            return;
+        }
+        
+        // Check if the webview is disposed
+        try {
+            const isAccessible = state.functionDetailsPanel.webview;
+        } catch (error) {
+            vscode.window.showErrorMessage('Function details panel is disposed. Please reopen it from the codelens.');
             return;
         }
 
@@ -248,30 +293,37 @@ export async function exploreStackTrace(functionId: number, context: vscode.Exte
                         </button>
                     </div>
                     <div class="debug-actions">
-                        <button class="debug-action-button" id="goToStateButton" disabled>
-                            <span class="codicon codicon-debug-step-into"></span> Go to this state
+                        <button class="debug-action-button" id="goToStateButton">
+                            <span class="codicon codicon-debug-alt"></span> Load State at this Point
                         </button>
                     </div>
-                    <div id="currentFrame" class="frame">
-                        <div class="frame-header">
-                            <span class="frame-line">Line ${data.frames[0].line}</span>
-                            <span class="frame-time">${new Date(data.frames[0].timestamp).toLocaleTimeString()}</span>
-                        </div>
-                        <div class="frame-locals">
-                            ${Object.entries(data.frames[0].locals).map(([name, value]: [string, any]) => `
+                </div>
+                
+                <!-- Current Frame Display - This was missing -->
+                <div class="frame" id="currentFrame">
+                    <div class="frame-header">
+                        <span class="frame-line">Line ${data.frames[0]?.line || 'N/A'}</span>
+                        <span class="frame-time">${data.frames[0] ? new Date(data.frames[0].timestamp).toLocaleTimeString() : 'N/A'}</span>
+                    </div>
+                    <div class="frame-locals">
+                        ${data.frames[0]?.locals ? 
+                            Object.entries(data.frames[0].locals).map(([name, value]) => `
                                 <div class="local-variable">
                                     <span class="var-name">${name}:</span>
                                     <span class="var-value">${value.value}</span>
                                 </div>
-                            `).join('')}
-                        </div>
+                            `).join('') : 
+                            '<div class="empty-message">No local variables</div>'
+                        }
                     </div>
                 </div>
+
+                <!-- Local Timeline Section -->
                 <div class="local-timeline">
-                    <h4>Local Timeline for Line ${data.frames[0].line}</h4>
+                    <h4>Line-specific Timeline</h4>
                     <div class="timeline-controls">
-                        <button class="timeline-button" id="localPrevButton" disabled>
-                            <span class="codicon codicon-chevron-left"></span> Previous
+                        <button class="timeline-button" id="localPrevButton">
+                            <span class="codicon codicon-chevron-left"></span> Prev
                         </button>
                         <div class="timeline-slider">
                             <input type="range" 
@@ -281,51 +333,75 @@ export async function exploreStackTrace(functionId: number, context: vscode.Exte
                                    value="0"
                                    step="1">
                             <div class="timeline-info">
-                                Snapshot <span id="localCurrentStep">1</span> of <span id="localTotalSteps">1</span>
+                                Step <span id="localCurrentStep">1</span> of <span id="localTotalSteps">1</span>
                             </div>
                         </div>
-                        <button class="timeline-button" id="localNextButton" disabled>
+                        <button class="timeline-button" id="localNextButton">
                             Next <span class="codicon codicon-chevron-right"></span>
                         </button>
                     </div>
                 </div>
+
+                <div class="variables-container">
+                    <div class="variable-section">
+                        <h4>Global Variables</h4>
+                        <div class="variables-grid" id="globals">
+                            ${data.frames[0]?.globals ? 
+                                Object.entries(data.frames[0].globals).map(([name, data]) => `
+                                    <div class="variable-card">
+                                        <div class="variable-name">${name}</div>
+                                        <div class="variable-type">${data.type}</div>
+                                        <div class="variable-value">${data.value}</div>
+                                    </div>
+                                `).join('') : 
+                                '<div class="empty-message">No global variables</div>'
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="back-button" id="backButton">
+                    <span class="codicon codicon-arrow-left"></span> Back to Function List
+                </button>
             </div>
         `;
 
-        // Replace the content placeholder in the template
-        const finalHtml = htmlContent.replace('<div id="content"></div>', `<div id="content">${content}</div>`);
+        // Set the HTML content
+        state.functionDetailsPanel.webview.html = htmlContent.replace('<div id="content"></div>', content);
 
+        // Update the panel title
         state.functionDetailsPanel.title = `Stack Recording - ${data.function.name}`;
-        state.functionDetailsPanel.webview.html = finalHtml;
-        
-        // Get the workspace folder to determine the database path
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        const dbPath = workspaceFolder ? vscode.Uri.joinPath(workspaceFolder.uri, 'main.db').fsPath : '';
-        
-        // Check if there's an active debug session
-        const isDebugging = !!vscode.debug.activeDebugSession;
-        
-        // Send snapshots data and additional info to the webview
+
+        // Send the stack trace data to the webview
+        state.functionDetailsPanel.webview.postMessage({
+            command: 'updateStackTrace',
+            data: data,
+            snapshots: data.frames
+        });
+
+        // Send initial snapshots to initialize the UI
         state.functionDetailsPanel.webview.postMessage({
             command: 'setSnapshots',
             snapshots: data.frames
         });
-        
-        // Send the database path
-        state.functionDetailsPanel.webview.postMessage({
-            command: 'setDbPath',
-            dbPath: dbPath
-        });
-        
-        // Send debugging status
-        state.functionDetailsPanel.webview.postMessage({
-            command: 'debugSessionStatus',
-            isDebugging: isDebugging
-        });
-        
-        state.functionDetailsPanel.reveal(vscode.ViewColumn.Beside);
+
+        // Highlight the first step's line
+        if (data.frames.length > 0) {
+            const lineNumber = data.frames[0].line;
+            // Only highlight if we have a line number
+            if (lineNumber) {
+                if (state.currentEditor) {
+                    highlightLine(state.currentEditor, lineNumber);
+                }
+            }
+        }
     } catch (error) {
         console.error('Error exploring stack trace:', error);
-        vscode.window.showErrorMessage('Failed to explore stack trace');
+        if (error instanceof Error) {
+            vscode.window.showErrorMessage(`Failed to explore stack trace: ${error.message}`);
+        } else {
+            vscode.window.showErrorMessage('Failed to explore stack trace');
+        }
     }
 } 

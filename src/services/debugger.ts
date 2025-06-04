@@ -35,7 +35,7 @@ enum DebugInputOption {
 export class DebuggerService {
     private static instance: DebuggerService;
     // Store the selected function call ID for reanimation
-    private selectedFunctionCallId: number | null = null;
+    private selectedFunctionCallId: string | number | null = null;
 
     private constructor() {}
 
