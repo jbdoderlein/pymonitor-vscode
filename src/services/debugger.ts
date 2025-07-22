@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { FunctionInfo } from './treeSitter';
 import { debugLog } from './state';
-import { getFunctionData } from './api';
+import { getFunctionData, getSessionsList, getSessionDetails, getFunctionTraces, refreshApiData } from './api';
+import { showFunctionDetails, exploreStackTrace } from './webview';
 
 /**
  * DebugConfiguration for a Python function
@@ -36,6 +37,9 @@ export class DebuggerService {
     private static instance: DebuggerService;
     // Store the selected function call ID for reanimation
     private selectedFunctionCallId: string | number | null = null;
+    // Store the current debug session ID and related info
+    private currentDebugSessionId: string | null = null;
+    private currentDebugFunctionInfo: { uri: vscode.Uri, functionName: string } | null = null;
 
     private constructor() {}
 
@@ -58,6 +62,13 @@ export class DebuggerService {
             this.selectedFunctionCallId = null;
             
             debugLog(`Starting debug session for function: ${functionInfo.name} in ${uri.fsPath}`);
+
+            // Generate a unique session ID for this debug session
+            const debugSessionId = `debug_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            this.currentDebugSessionId = debugSessionId;
+            this.currentDebugFunctionInfo = { uri, functionName: functionInfo.name };
+
+            debugLog(`Generated debug session ID: ${debugSessionId}`);
 
             // Get Python extension
             const pythonExtension = vscode.extensions.getExtension('ms-python.python');
@@ -133,26 +144,40 @@ export class DebuggerService {
                 request: 'launch',
                 program: uri.fsPath,
                 pythonPath: pythonPath,
-                args: [],
+                args: [debugSessionId], // Pass the unique session ID
                 console: 'integratedTerminal',
                 stopOnEntry: true, // Stop at the first line of the function
                 // Add an environment variable to indicate we want to debug a specific function
                 env: {
                     'PYMONITOR_DEBUG_FUNCTION': functionInfo.name,
-                    'PYMONITOR_DEBUG_MODE': 'true'
+                    'PYMONITOR_DEBUG_MODE': 'true',
+                    'PYMONITOR_SESSION_ID': debugSessionId
                 }
             };
 
             // Create a wrapper file that will call the function with selected args
-            const wrapperFile = await this.createWrapperFile(uri.fsPath, functionInfo, callArgs, useReanimation);
+            const wrapperFile = await this.createWrapperFile(uri.fsPath, functionInfo, callArgs, useReanimation, debugSessionId);
             if (wrapperFile) {
                 debugConfig.program = wrapperFile.fsPath;
                 debugConfig.stopOnEntry = false; // We want to stop on the function entry, not the wrapper
             }
 
             // Start debugging
-            vscode.debug.startDebugging(undefined, debugConfig);
-            return true;
+            const debugStarted = await vscode.debug.startDebugging(undefined, debugConfig);
+            debugLog(`Debug session started: ${debugStarted}`);
+            
+            if (debugStarted) {
+                debugLog(`Setting up monitoring for debug session: ${debugSessionId}`);
+                // After a short delay, start monitoring for the function execution
+                setTimeout(() => {
+                    debugLog(`Starting monitoring for debug session: ${debugSessionId}`);
+                    this.monitorForDebugExecution(debugSessionId, uri, functionInfo.name);
+                }, 2000); // Wait 2 seconds for the debug session to initialize
+            } else {
+                debugLog(`Failed to start debug session`);
+            }
+            
+            return debugStarted;
         } catch (error) {
             debugLog('Error starting debug session:', error);
             vscode.window.showErrorMessage(`Failed to start debug session: ${error}`);
@@ -338,13 +363,178 @@ export class DebuggerService {
     }
 
     /**
+     * Monitor for the appearance of the function execution from the debug session
+     * and automatically open the webview when found
+     */
+    private async monitorForDebugExecution(sessionId: string, uri: vscode.Uri, functionName: string): Promise<void> {
+        const maxAttempts = 30; // Maximum attempts (30 seconds with 1-second intervals)
+        let attempts = 0;
+        
+        debugLog(`[MONITOR] Starting to monitor for debug execution: ${sessionId}, function: ${functionName}`);
+
+        const checkForExecution = async () => {
+            try {
+                attempts++;
+                debugLog(`[MONITOR] Checking for debug execution, attempt ${attempts}/${maxAttempts} for session: ${sessionId}`);
+
+                // First, refresh the API data to ensure we get fresh sessions
+                debugLog(`[MONITOR] Refreshing API data...`);
+                const refreshSuccess = await refreshApiData();
+                if (!refreshSuccess) {
+                    debugLog(`[MONITOR] WARNING: Failed to refresh API data, continuing anyway...`);
+                }
+
+                // Now check if there's a session with our ID
+                debugLog(`[MONITOR] Fetching sessions list...`);
+                const sessions = await getSessionsList();
+                if (!sessions) {
+                    debugLog(`[MONITOR] FAILED to get sessions list`);
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkForExecution, 1000);
+                    } else {
+                        debugLog(`[MONITOR] Giving up after ${maxAttempts} attempts - no sessions list`);
+                    }
+                    return;
+                }
+
+                debugLog(`[MONITOR] Retrieved ${sessions.length} sessions from API`);
+                sessions.forEach((session, index) => {
+                    debugLog(`[MONITOR] Session ${index}: name="${session.name}", id=${session.id}`);
+                });
+
+                // Look for our debug session
+                const debugSession = sessions.find(session => 
+                    session.name.includes(sessionId) || session.name.includes(`Debugger Session ${sessionId}`)
+                );
+
+                if (!debugSession) {
+                    debugLog(`[MONITOR] Debug session not found yet: ${sessionId}`);
+                    debugLog(`[MONITOR] Looking for sessions containing: "${sessionId}" or "Debugger Session ${sessionId}"`);
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkForExecution, 1000);
+                    } else {
+                        debugLog(`[MONITOR] Giving up after ${maxAttempts} attempts - session not found`);
+                    }
+                    return;
+                }
+
+                debugLog(`[MONITOR] Found debug session: "${debugSession.name}" (ID: ${debugSession.id})`);
+
+                // Get session details to find function executions
+                debugLog(`[MONITOR] Fetching session details for session ID: ${debugSession.id}`);
+                const sessionDetails = await getSessionDetails(debugSession.id);
+                if (!sessionDetails) {
+                    debugLog(`[MONITOR] FAILED to get session details for ID: ${debugSession.id}`);
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkForExecution, 1000);
+                    } else {
+                        debugLog(`[MONITOR] Giving up after ${maxAttempts} attempts - no session details`);
+                    }
+                    return;
+                }
+
+                debugLog(`[MONITOR] Session details retrieved successfully`);
+
+                // The session details now include full function_calls data, not just IDs
+                const allFunctionCalls = (sessionDetails as any).function_calls || [];
+                debugLog(`[MONITOR] Found ${allFunctionCalls.length} function calls in session`);
+
+                if (allFunctionCalls.length === 0) {
+                    debugLog(`[MONITOR] No function calls found yet in session`);
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkForExecution, 1000);
+                    } else {
+                        debugLog(`[MONITOR] Giving up after ${maxAttempts} attempts - no function calls`);
+                    }
+                    return;
+                }
+
+                // Filter the function calls by function name (we already have full data)
+                debugLog(`[MONITOR] Filtering function calls by function name: ${functionName}`);
+                const functionExecutions = allFunctionCalls.filter((call: any) => {
+                    debugLog(`[MONITOR] Checking function call: function="${call.function}", id=${call.id}`);
+                    return call.function === functionName;
+                });
+                
+                debugLog(`[MONITOR] Filtered to ${functionExecutions.length} matching function calls`);
+
+                debugLog(`[MONITOR] Total matching function executions found: ${functionExecutions.length}`);
+
+                if (functionExecutions.length === 0) {
+                    debugLog(`[MONITOR] No function executions found yet for ${functionName}`);
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkForExecution, 1000);
+                    } else {
+                        debugLog(`[MONITOR] Giving up after ${maxAttempts} attempts - no matching executions`);
+                    }
+                    return;
+                }
+
+                debugLog(`[MONITOR] SUCCESS! Found ${functionExecutions.length} function execution(s) for ${functionName}`);
+
+                // Open the stack recording directly for the first/most recent function execution
+                const context = (global as any).pymonitorExtensionContext;
+                debugLog(`[MONITOR] Extension context available:`, !!context);
+                
+                if (context && functionExecutions.length > 0) {
+                    const targetExecution = functionExecutions[0]; // Use the first execution
+                    const functionId = targetExecution.id;
+                    debugLog(`[MONITOR] Opening webview and navigating to stack recording for function execution ID: ${functionId}`);
+                    
+                    try {
+                        // First create the webview panel with the function details
+                        debugLog(`[MONITOR] Creating webview panel...`);
+                        showFunctionDetails(functionExecutions, context);
+                        
+                        // Then immediately navigate to the stack recording view
+                        debugLog(`[MONITOR] Navigating to stack recording...`);
+                        // Use setTimeout to ensure the panel is created before navigating
+                        setTimeout(async () => {
+                            try {
+                                await exploreStackTrace(functionId, context);
+                                debugLog(`[MONITOR] Stack recording opened successfully for function ID: ${functionId}`);
+                            } catch (error) {
+                                debugLog(`[MONITOR] Error navigating to stack recording:`, error);
+                            }
+                        }, 100); // Small delay to ensure panel is ready
+                        
+                        vscode.window.showInformationMessage(
+                            `Debug session started - opened stack recording for ${functionName} execution`
+                        );
+                    } catch (error) {
+                        debugLog(`[MONITOR] Error opening webview:`, error);
+                        vscode.window.showErrorMessage(
+                            `Failed to open webview for ${functionName} execution: ${error}`
+                        );
+                    }
+                } else {
+                    debugLog(`[MONITOR] ERROR: Extension context not available or no executions found`);
+                }
+
+            } catch (error) {
+                debugLog(`[MONITOR] EXCEPTION in checkForExecution:`, error);
+                if (attempts < maxAttempts) {
+                    setTimeout(checkForExecution, 1000);
+                } else {
+                    debugLog(`[MONITOR] Giving up after ${maxAttempts} attempts due to persistent errors`);
+                }
+            }
+        };
+
+        // Start checking
+        debugLog(`[MONITOR] Starting execution check loop...`);
+        checkForExecution();
+    }
+
+    /**
      * Create a temporary Python file that will import and call the target function
      */
     private async createWrapperFile(
         targetFile: string, 
         functionInfo: FunctionInfo, 
         argValues: Map<string, string>,
-        useReanimation: boolean = false
+        useReanimation: boolean = false,
+        sessionId?: string
     ): Promise<vscode.Uri | null> {
         try {
             // Get workspace folder
@@ -360,238 +550,72 @@ export class DebuggerService {
             let content = `# PyMonitor debug wrapper - temporary file\n`;
             content += `import sys\n`;
             content += `import os\n`;
-            content += `import debugpy\n`;
             content += `import monitoringpy\n`;
-            content += `import importlib\n`;
-            content += `import inspect\n`;
-            content += `import types\n`;
-            content += `import dis\n`;
-            content += `import bytecode\n\n`;
-            content += `sys.path.insert(0, "${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}")\n\n`;
-            content += `# Import the target module\n`;
-            content += `from ${moduleName} import ${functionInfo.name}\n\n`;
-            content += `db_path = os.path.join("${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}", "main.db")\n\n`;
-            content += `monitoringpy.init_monitoring(db_path=db_path, pyrapl_enabled=False)\n`;
-            content += `monitoringpy.pymonitor_line(${functionInfo.name})\n\n`;
             
-            // Add the function that reloads the code of the function being tested
-            content += `# Function to reload the code of the function being tested\n`;
-            content += `def reload_and_modify_function(module_path, function_name):\n`;
-            content += `    """Reload the module and return a modified version of the function.\n`;
-            content += `    \n`;
-            content += `    Args:\n`;
-            content += `        module_path: The import path of the module (e.g. 'mypackage.mymodule')\n`;
-            content += `        function_name: The name of the function to reload and modify\n`;
-            content += `    \n`;
-            content += `    Returns:\n`;
-            content += `        The modified function object\n`;
-            content += `    """\n`;
-            content += `    print(f"Reloading function {function_name} from {module_path}")\n`;
-            content += `    \n`;
-            content += `    # Reload the module\n`;
-            content += `    try:\n`;
-            content += `        # Get the module object\n`;
-            content += `        module = sys.modules.get(module_path)\n`;
-            content += `        if not module:\n`;
-            content += `            print(f"Module {module_path} not found in sys.modules, importing")\n`;
-            content += `            module = importlib.import_module(module_path)\n`;
-            content += `        else:\n`;
-            content += `            print(f"Module {module_path} found, reloading")\n`;
-            content += `            module = importlib.reload(module)\n`;
-            content += `        \n`;
-            content += `        # Get the function object\n`;
-            content += `        func = getattr(module, function_name)\n`;
-            content += `        print(f"Function {function_name} loaded: {func}")\n`;
-            content += `        \n`;
-            content += `        # Method 1: Source code modification approach (not used)\n`;
-            content += `        # Get the source code of the function\n`;
-            content += `        source = inspect.getsource(func)\n`;
-            content += `        print(f"Original source code:\\n{source}")\n`;
-            content += `        \n`;
-            content += `        # ===================================================================\n`;
-            content += `        # Method 2: Bytecode modification to insert a debugpy breakpoint\n`;
-            content += `        # This directly modifies the function bytecode instead of source code\n`;
-            content += `        # NOTE: Currently disabled as it's causing issues\n`;
-            content += `        # ===================================================================\n`;
-            content += `        try:\n`;
-            content += `            print("Bytecode modification is currently disabled - using original function")\n`;
-            content += `            # Commented out due to bytecode compatibility issues\n`;
-            content += `            # The following code injects a debugpy.breakpoint() call at the start of the function\n`;
-            content += `            \n`;
-            content += `            # print("Applying bytecode modification to add debugpy breakpoint")\n`;
-            content += `            # code = func.__code__\n`;
-            content += `            # original = bytecode.Bytecode.from_code(code)\n`;
-            content += `            # \n`;
-            content += `            # # Get the location of the first instruction\n`;
-            content += `            # if len(original) > 0:\n`;
-            content += `            #     location = original[0].location\n`;
-            content += `            #     \n`;
-            content += `            #     # Print original bytecode for debugging\n`;
-            content += `            #     print("Original bytecode:")\n`;
-            content += `            #     for i, instr in enumerate(original):\n`;
-            content += `            #         print(f"  {i}: {instr}")\n`;
-            content += `            #     \n`;
-            content += `            #     # First, add import debugpy instruction\n`;
-            content += `            #     original.insert(1, bytecode.Instr("LOAD_CONST", 1, location=location))\n`;  
-            content += `            #     original.insert(2, bytecode.Instr("LOAD_CONST", None, location=location))\n`;
-            content += `            #     original.insert(3, bytecode.Instr("IMPORT_NAME", "debugpy", location=location))\n`;
-            content += `            #     original.insert(4, bytecode.Instr("STORE_FAST", "debugpy", location=location))\n`;
-            content += `            #     \n`;
-            content += `            #     # Then insert bytecode instructions to call debugpy.breakpoint()\n`;
-            content += `            #     original.insert(5, bytecode.Instr("LOAD_FAST", "debugpy", location=location))\n`;
-            content += `            #     original.insert(6, bytecode.Instr("LOAD_ATTR", (True, "breakpoint"), location=location))\n`;
-            content += `            #     original.insert(7, bytecode.Instr("PUSH_NULL", location=location))\n`;
-            content += `            #     original.insert(8, bytecode.Instr("CALL", 0, location=location))\n`;
-            content += `            #     original.insert(9, bytecode.Instr("POP_TOP", location=location))\n`;
-            content += `            #     \n`;
-            content += `            #     # Print modified bytecode for debugging\n`;
-            content += `            #     print("Modified bytecode:")\n`;
-            content += `            #     for i, instr in enumerate(original):\n`;
-            content += `            #         print(f"  {i}: {instr}")\n`;
-            content += `            #     \n`;
-            content += `            #     # Update the function with the modified bytecode\n`;
-            content += `            #     func.__code__ = original.to_code()\n`;
-            content += `            #     print("Successfully modified function bytecode to add debugpy breakpoint")\n`;
-            content += `            # else:\n`;
-            content += `            #     print("Warning: Empty bytecode, cannot insert breakpoint")\n`;
-            content += `        except Exception as e:\n`;
-            content += `            print(f"Error during bytecode operation: {e}")\n`;
-            content += `            import traceback\n`;
-            content += `            traceback.print_exc()\n`;
-            content += `        \n`;
-            content += `        # Apply the monitoring decorator\n`;
-            content += `        print("Applying monitoringpy.pymonitor_line decorator")\n`;
-            content += `        func = monitoringpy.pymonitor_line(func)\n`;
-            content += `        \n`;
-            content += `        # Replace the original function in the module and globals\n`;
-            content += `        setattr(module, function_name, func)\n`;
-            content += `        globals()[function_name] = func\n`;
-            content += `        \n`;
-            content += `        return func\n`;
-            content += `    except Exception as e:\n`;
-            content += `        print(f"Error reloading function: {e}")\n`;
-            content += `        import traceback\n`;
-            content += `        traceback.print_exc()\n`;
-            content += `        return None\n\n`;
+            // Use the provided session ID or fallback to sys.argv[1]
+            const sessionName = sessionId ? `"Debugger Session ${sessionId}"` : `f"Debugger Session {sys.argv[1]}"`;
             
-            // Add a simple wrapper function to make reloading easier
-            content += `# Simple wrapper to quickly reload the current function\n`;
-            content += `def fast_reload():\n`;
-            content += `    """Quickly reload the current function.\n`;
-            content += `    Returns the reloaded function object.\n`;
-            content += `    """\n`;
-            content += `    return reload_and_modify_function("${moduleName}", "${functionInfo.name}")\n\n`;
-            
-            // Add the frame-finding utility function that will be used to load snapshots
-            content += `# Utility function to find the correct frame and load a snapshot\n`;
-            content += `def wrapper_load_snapshot(snapshot_id):\n`;
-            content += `    import inspect\n`;
-            content += `    import sys\n\n`;
-            content += `    def find_target_frame():\n`;
-            content += `        """Find the most appropriate frame from the current call stack"""\n`;
-            content += `        frames = inspect.stack()\n\n`;
-            content += `        # First try to find a frame that belongs to user code (not debugger internals)\n`;
-            content += `        user_frames = []\n`;
-            content += `        for frame_info in frames:\n`;
-            content += `            # Skip debugger internal frames\n`;
-            content += `            filename = frame_info.filename\n`;
-            content += `            if any(x in filename for x in ['debugpy', '_pydevd_', 'pydevd_', '/usr/lib/python']):\n`;
-            content += `                continue\n\n`;
-            content += `            # Found user code - particularly look for our target function\n`;
-            content += `            if frame_info.frame.f_code.co_name == "${functionInfo.name}":\n`;
-            content += `                print(f"Found target function frame: {frame_info.function}")\n`;
-            content += `                return frame_info.frame\n\n`;
-            content += `            # Otherwise add to potential user frames\n`;
-            content += `            user_frames.append(frame_info.frame)\n\n`;
-            content += `        # If we found user frames, use the first one\n`;
-            content += `        if user_frames:\n`;
-            content += `            print(f"Using first user frame: {user_frames[0].f_code.co_name}")\n`;
-            content += `            return user_frames[0]\n\n`;
-            content += `        # Fallback: walk up the stack to find a plausible frame\n`;
-            content += `        for frame_info in frames:\n`;
-            content += `            # Find a frame that has non-empty locals (often a sign of user code)\n`;
-            content += `            if frame_info.frame.f_locals and not frame_info.filename.startswith('/'):\n`;
-            content += `                print(f"Using fallback frame: {frame_info.function}")\n`;
-            content += `                return frame_info.frame\n\n`;
-            content += `        # Last resort: just return the current frame\n`;
-            content += `        print("Using current frame as last resort")\n`;
-            content += `        return sys._getframe()\n\n`;
-            content += `    # Find the best target frame\n`;
-            content += `    target_frame = find_target_frame()\n\n`;
-            content += `    # Try to load the snapshot into the identified frame\n`;
-            content += `    try:\n`;
-            content += `        print(f"Loading snapshot {snapshot_id} into frame {target_frame.f_code.co_name}")\n`;
-            content += `        result = monitoringpy.load_snapshot_in_frame(\n`;
-            content += `            db_path=db_path,\n`;
-            content += `            snapshot_id=snapshot_id,\n`;
-            content += `            frame=target_frame\n`;
-            content += `        )\n`;
-            content += `        print(f"Snapshot {snapshot_id} loaded with result: {result}")\n`;
-            content += `        return True\n`;
-            content += `    except Exception as e:\n`;
-            content += `        print(f"Error loading snapshot: {e}")\n`;
-            content += `        import traceback\n`;
-            content += `        traceback.print_exc()\n`;
-            content += `        return False\n\n`;
-            
-            // If using reanimation, use the monitoringpy library
+            // If using reanimation, use the new monitoringpy.core.reanimation API
             if (useReanimation && this.selectedFunctionCallId) {
-                content += `# Find the database file\n`;
-                content += `try:\n`;
-                content += `    # First reload and modify the function with a debugpy breakpoint\n`;
-                content += `    modified_function = reload_and_modify_function("${moduleName}", "${functionInfo.name}")\n`;
-                content += `    \n`;
-                content += `    # Load function execution data for inspection\n`;
-                content += `    args, kwargs = monitoringpy.load_execution_data(\n`;
-                content += `        function_execution_id="${this.selectedFunctionCallId}",\n`;
-                content += `        db_path=db_path\n`;
-                content += `    )\n`;
-                content += `    \n`;
-                content += `    # Call the modified function with exact arguments from the recorded execution\n`;
-                content += `    result = modified_function(*args, **kwargs)\n`;
-                content += `    \n`;
-                content += `except Exception as e:\n`;
-                content += `    print(f"Error during function reanimation: {e}")\n`;
-                content += `    \n`;
-                content += `    # Alternative: use full reanimation if direct call fails\n`;
-                content += `    print("Trying full reanimation...")\n`;
+                content += `from monitoringpy.core.reanimation import execute_function_call, load_execution_data\n\n`;
+                content += `# Add workspace to Python path\n`;
+                content += `sys.path.insert(0, "${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}")\n`;
+                content += `db_path = os.path.join("${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}", "main.db")\n`;
+                content += `monitor = monitoringpy.init_monitoring(db_path=db_path, in_memory=False)\n\n`;
+                
+                content += `# Use the new API for function execution replay\n`;
+                content += `if __name__ == "__main__":\n`;
+                content += `    monitoringpy.start_session(${sessionName})\n`;
                 content += `    try:\n`;
-                content += `        # Note: full reanimation may not use our modified function\n`;
-                content += `        result = monitoringpy.reanimate_function(\n`;
+                content += `        print(f"Starting reanimation for function execution ID: ${this.selectedFunctionCallId}")\n`;
+                content += `        \n`;
+                content += `        result = execute_function_call(\n`;
                 content += `            function_execution_id="${this.selectedFunctionCallId}",\n`;
-                content += `            db_path=db_path,\n`;
-                content += `            import_path="${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}"\n`;
+                content += `            db_path_or_session=db_path,\n`;
+                content += `            import_path="${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}",\n`;
+                content += `            enable_monitoring=True,\n`;
+                content += `            reload_module=True\n`;
                 content += `        )\n`;
-                content += `        print(f"Reanimation result: {result}")\n`;
-                content += `    except Exception as e2:\n`;
-                content += `        print(f"Reanimation also failed: {e2}")\n`;
+                content += `        \n`;
+                content += `        print(f"Reanimation completed successfully with result: {result}")\n`;
+                content += `        \n`;
+                content += `    except Exception as e:\n`;
+                content += `        print(f"Error during function reanimation: {e}")\n`;
+                content += `        import traceback\n`;
+                content += `        traceback.print_exc()\n`;
+                content += `    monitoringpy.end_session()\n`;
             } else {
-                // Standard approach with explicit arguments
+                // Standard approach with simplified script
+                content += `from monitoringpy.interface.debugger import inject_do_jump\n\n`;
+                content += `sys.path.insert(0, "${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}")\n`;
+                content += `db_path = os.path.join("${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}", "main.db")\n`;
+                content += `monitor = monitoringpy.init_monitoring(db_path=db_path, in_memory=False)\n`;
+                content += `from ${moduleName} import ${functionInfo.name}\n`;
+                content += `${functionInfo.name} = monitoringpy.pymonitor(mode="line")(${functionInfo.name})\n`;
+                content += `monitoringpy.interface.debugger.inject_do_jump(${functionInfo.name})\n\n`;
                 
                 content += `# Call the function\n`;
+                content += `if __name__ == "__main__":\n`;
+                content += `    monitoringpy.start_session(${sessionName})\n`;
+                
                 // Create a function call with the provided arguments
                 const callArgs = functionInfo.params
                     .map(param => `${param}=${argValues.get(param) || 'None'}`)
                     .join(', ');
                 
-                content += `if __name__ == "__main__":\n`;
-                content += `    print(f"Calling ${functionInfo.name}(${callArgs})")\n`;
-                content += `    # First reload and modify the function with a debugpy breakpoint\n`;
-                content += `    modified_function = reload_and_modify_function("${moduleName}", "${functionInfo.name}")\n`;
-                content += `    # Call the modified function\n`;
-                content += `    result = modified_function(${callArgs})\n`;
-                content += `    print(f"Result: {result}")\n`;
-                content += `    \n`;
-                content += `    # Note: While debugging, you can also use the fast_reload() function to\n`;
-                content += `    # quickly reload this function without needing to specify module or function name:\n`;
-                content += `    # new_function = fast_reload()\n`;
+                if (callArgs) {
+                    content += `    ${functionInfo.name}(${callArgs})\n`;
+                } else {
+                    content += `    ${functionInfo.name}()\n`;
+                }
+                content += `    monitoringpy.end_session()\n`;
             }
             
             // Create temporary file
             const tempDir = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'pymonitor');
             await vscode.workspace.fs.createDirectory(tempDir);
             
-            const tempFile = vscode.Uri.joinPath(tempDir, `debug_${functionInfo.name}.py`);
+            const tempFile = vscode.Uri.joinPath(tempDir, `debug_${functionInfo.name}_${sessionId || 'session'}.py`);
             await vscode.workspace.fs.writeFile(tempFile, Buffer.from(content, 'utf8'));
             
             return tempFile;
@@ -688,8 +712,8 @@ export class DebuggerService {
     }
 
     /**
-     * Goes to a specific snapshot during a debug session
-     * Uses the Debug Adapter Protocol's goto request and monitoringpy's load_snapshot_in_frame
+     * Loads a specific snapshot state during a debug session
+     * Uses the Debug Adapter Protocol and monitoringpy.core.reanimation tools
      * 
      * @param snapshotId The ID of the snapshot to load
      * @param dbPath Path to the database file
@@ -700,86 +724,54 @@ export class DebuggerService {
         try {
             const session = vscode.debug.activeDebugSession;
             if (!session) {
-                console.log('No active debug session');
-                vscode.window.showErrorMessage('No active debug session found');
+                console.log('No active debug session found');
+                vscode.window.showErrorMessage('No active debug session found. Please start debugging first.');
                 return false;
             }
 
-            console.log(`=== Go To Snapshot Debug Info ===`);
+            console.log(`=== Loading Snapshot State ===`);
             console.log(`Snapshot ID: ${snapshotId}`);
             console.log(`DB Path: ${dbPath}`);
-            console.log(`Frame ID provided: ${frameId !== undefined ? frameId : 'Not specified'}`);
             
-            // Get the thread ID for the evaluation
+            // Get basic thread info - but don't fail if we can't get frame details
             let threadId: number | undefined;
             try {
-                console.log('Requesting thread information...');
                 const threadsResponse = await session.customRequest('threads');
-                console.log('Threads response:', threadsResponse);
-                
                 if (threadsResponse.threads && threadsResponse.threads.length > 0) {
-                    // Use the first thread - typically the main thread
                     threadId = threadsResponse.threads[0].id;
                     console.log(`Using thread ID: ${threadId}`);
-                    
-                    // If no frameId provided, get stack frames and select one
-                    if (frameId === undefined) {
-                        const stackTraceResponse = await session.customRequest('stackTrace', {
-                            threadId: threadId
-                        });
-                        
-                        console.log('Stack frames:', stackTraceResponse);
-                        
-                        if (stackTraceResponse.stackFrames && stackTraceResponse.stackFrames.length > 0) {
-                            // Get the first user code frame (not in system libraries)
-                            const userFrames = stackTraceResponse.stackFrames.filter((frame: any) => {
-                                const source = frame.source?.path || '';
-                                return !source.includes('debugpy') && 
-                                       !source.includes('/usr/lib/python') &&
-                                       !source.startsWith('/home/jbdod/.vscode/extensions/');
-                            });
-                            
-                            if (userFrames.length > 0) {
-                                frameId = userFrames[0].id;
-                                console.log(`Auto-selected frame ID: ${frameId} (${userFrames[0].name} at ${userFrames[0].source?.path}:${userFrames[0].line})`);
-                            } else {
-                                // Fall back to the top frame if no user frames found
-                                frameId = stackTraceResponse.stackFrames[0].id;
-                                console.log(`Auto-selected top frame ID: ${frameId} (${stackTraceResponse.stackFrames[0].name})`);
-                            }
-                        }
-                    }
                 }
             } catch (error) {
-                console.error('Error getting thread/frame information:', error);
-                // Continue with undefined threadId
+                console.log('Could not get thread info, will try without it:', error);
             }
             
-            // Now call the evaluate method with both frameId and threadId
-            console.log(`Evaluating monitoringpy.load_snapshot_in_frame with frameId: ${frameId}, threadId: ${threadId}`);
-            const loadSnapshotCommand = `monitoringpy.load_snapshot_in_frame(db_path="${dbPath}", snapshot_id=${snapshotId}, frame=None)`;
+            // Use the direct load_snapshot_in_frame function - simplest approach!
+            console.log(`Loading snapshot ${snapshotId} using load_snapshot_in_frame...`);
+            const loadSnapshotCommand = `import monitoringpy; monitoringpy.load_snapshot_in_frame(${snapshotId}, "${dbPath}")`;
             
             try {
+                console.log('Executing snapshot loading command...');
                 const response = await this.evaluate(loadSnapshotCommand, frameId, threadId);
-                console.log('Load snapshot response:', response);
+                console.log('Snapshot loading response:', response);
                 
-                if (response && response.result !== '') {
-                    console.log('Successfully loaded snapshot state');
-                    vscode.window.showInformationMessage(`Successfully loaded state from snapshot #${snapshotId}`);
+                if (response && typeof response.result === 'string' && response.result.startsWith('SUCCESS:')) {
+                    console.log('✓ Successfully loaded snapshot state');
+                    vscode.window.showInformationMessage(`Successfully loaded snapshot #${snapshotId} state`);
                     return true;
                 } else {
-                    console.error('Failed to load snapshot state:', response);
-                    vscode.window.showErrorMessage(`Failed to load snapshot #${snapshotId} state`);
+                    console.log('✗ Snapshot loading failed or returned unexpected result');
+                    const errorMsg = response?.result || 'Unknown error';
+                    vscode.window.showErrorMessage(`Failed to load snapshot #${snapshotId}: ${errorMsg}`);
                     return false;
                 }
-            } catch (error) {
-                console.error('Error loading snapshot state:', error);
-                vscode.window.showErrorMessage(`Error loading snapshot state: ${error}`);
+            } catch (evalError) {
+                console.error('Error during evaluation:', evalError);
+                vscode.window.showErrorMessage(`Error executing snapshot load: ${evalError}`);
                 return false;
             }
         } catch (error) {
             console.error('Error in goToSnapshot:', error);
-            vscode.window.showErrorMessage(`Failed to go to snapshot: ${error}`);
+            vscode.window.showErrorMessage(`Failed to load snapshot: ${error}`);
             return false;
         }
     }

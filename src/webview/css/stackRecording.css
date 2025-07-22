@@ -5,6 +5,38 @@ body {
     color: var(--vscode-editor-foreground);
 }
 
+
+
+.reload-button {
+    position: fixed;
+    top: 20px;
+    right: 90px;  /* Position to the left of the back button */
+    background-color: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;  /* Higher than back button */
+}
+
+.reload-button:hover:not([disabled]) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.reload-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.reload-button .codicon {
+    font-size: 14px;
+}
+
 .stack-trace-container {
     padding: 16px;
 }
@@ -116,6 +148,7 @@ body {
     align-items: center;
     gap: 8px;
     margin-bottom: 16px;
+    margin-top: 20px;
 }
 
 .back-button:hover {
@@ -364,5 +397,341 @@ input[type="range"]::-webkit-slider-thumb:hover {
     100% {
         opacity: 0.3;
         transform: scale(1);
+    }
+} 
+
+/* Add styles at the end for trace comparison functionality */
+
+/* Header Controls */
+.header-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    gap: 1rem;
+}
+
+.trace-comparison-section {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.comparison-label {
+    font-size: 0.9rem;
+    color: var(--vscode-foreground);
+    white-space: nowrap;
+}
+
+.trace-select {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 2px;
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    min-width: 200px;
+}
+
+.trace-select:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+}
+
+.compare-button,
+.close-comparison-button,
+.graph-control-btn {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 2px;
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.compare-button:hover,
+.close-comparison-button:hover,
+.graph-control-btn:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.compare-button:disabled {
+    background: var(--vscode-button-background);
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.close-comparison-button {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+}
+
+.close-comparison-button:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Comparison View */
+.comparison-view {
+    margin-top: 1rem;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    background: var(--vscode-editor-background);
+}
+
+.comparison-header {
+    padding: 1rem;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    background: var(--vscode-panel-background);
+}
+
+.comparison-header h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.2rem;
+    color: var(--vscode-foreground);
+}
+
+.comparison-traces-info {
+    display: flex;
+    gap: 2rem;
+    font-size: 0.9rem;
+}
+
+.trace-info {
+    color: var(--vscode-descriptionForeground);
+}
+
+.trace-info strong {
+    color: var(--vscode-foreground);
+}
+
+/* Comparison Content */
+.comparison-content {
+    display: flex;
+    height: 70vh;
+}
+
+.code-comparison-panel,
+.graph-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--vscode-panel-border);
+}
+
+.graph-panel {
+    border-right: none;
+}
+
+.panel-header {
+    padding: 0.75rem;
+    background: var(--vscode-panel-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--vscode-foreground);
+}
+
+.graph-controls {
+    display: flex;
+    gap: 0.25rem;
+}
+
+/* Code Panels */
+.code-panels {
+    display: flex;
+    flex: 1;
+    height: 100%;
+}
+
+.code-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--vscode-panel-border);
+}
+
+.code-panel:last-child {
+    border-right: none;
+}
+
+.code-panel-header {
+    padding: 0.5rem;
+    background: var(--vscode-tab-activeBackground);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--vscode-tab-activeForeground);
+    text-align: center;
+}
+
+.code-container {
+    flex: 1;
+    overflow: auto;
+    padding: 0.5rem;
+    font-family: var(--vscode-editor-font-family);
+    font-size: var(--vscode-editor-font-size);
+    line-height: 1.3;
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+}
+
+/* Code line styling */
+.code-line {
+    display: flex;
+    align-items: flex-start;
+    white-space: pre;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1.2;
+}
+
+.code-line:hover {
+    background-color: var(--vscode-list-hoverBackground);
+}
+
+.line-number {
+    min-width: 3em;
+    text-align: right;
+    padding-right: 0.5rem;
+    color: var(--vscode-editorLineNumber-foreground);
+    margin-right: 8px;
+    user-select: none;
+    border-right: 1px solid var(--vscode-editorLineNumber-foreground);
+    flex-shrink: 0;
+    font-size: 0.85em;
+}
+
+.line-content {
+    white-space: pre;
+    flex-grow: 1;
+}
+
+.highlighted-line {
+    background-color: var(--vscode-editor-lineHighlightBackground) !important;
+    border-left: 3px solid var(--vscode-editorCursor-foreground);
+    padding-left: 4px;
+}
+
+.highlighted-line .line-number {
+    color: var(--vscode-editorCursor-foreground);
+    font-weight: bold;
+}
+
+/* Graph Visualization */
+.graph-container {
+    flex: 1;
+    position: relative;
+    background: var(--vscode-editor-background);
+    overflow: hidden;
+}
+
+.graph-svg {
+    width: 100%;
+    height: 100%;
+    display: none;
+}
+
+.loading-message {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: var(--vscode-descriptionForeground);
+}
+
+.loading-spinner {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.graph-stats {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: var(--vscode-panel-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-size: 0.8rem;
+    opacity: 0.9;
+    max-width: 200px;
+}
+
+.stats-content {
+    color: var(--vscode-foreground);
+}
+
+/* Tooltip */
+.tooltip {
+    position: absolute;
+    background: var(--vscode-editorHoverWidget-background);
+    color: var(--vscode-editorHoverWidget-foreground);
+    border: 1px solid var(--vscode-editorHoverWidget-border);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.3s;
+    max-width: 300px;
+    word-wrap: break-word;
+}
+
+/* Graph node and edge styling */
+.graph-svg .node-common { fill: #6c757d; }
+.graph-svg .node-modified { fill: #fd7e14; }
+.graph-svg .node-only1 { fill: #dc3545; }
+.graph-svg .node-only2 { fill: #28a745; }
+
+/* Edge highlighting */
+.graph-svg path.highlighted {
+    stroke-width: 3px;
+    stroke-opacity: 1;
+}
+
+.graph-svg circle.highlighted {
+    stroke: var(--vscode-editorCursor-foreground);
+    stroke-width: 3px;
+    filter: drop-shadow(0 0 6px var(--vscode-editorCursor-foreground));
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .comparison-content {
+        flex-direction: column;
+        height: auto;
+    }
+    
+    .code-comparison-panel,
+    .graph-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    
+    .graph-panel {
+        border-bottom: none;
+        height: 50vh;
+    }
+    
+    .code-panels {
+        height: 40vh;
     }
 } 

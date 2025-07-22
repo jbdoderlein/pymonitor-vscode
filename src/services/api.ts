@@ -134,4 +134,60 @@ export async function getSessionDetails(sessionId: number | string): Promise<Ses
         console.error('Error fetching session details:', error);
         return null;
     }
+}
+
+export async function refreshApiData(): Promise<boolean> {
+    try {
+        const response = await fetch(`${config.getApiUrl()}/api/refresh`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return true;
+    } catch (error) {
+        console.error('Error refreshing API data:', error);
+        return false;
+    }
+}
+
+export async function getTracesList(): Promise<FunctionData[] | null> {
+    try {
+        const response = await fetch(`${config.getApiUrl()}/api/function-calls`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json() as { function_calls: FunctionData[] };
+        // Filter to only include traces with stack recordings
+        return data.function_calls.filter(trace => trace.has_stack_recording) || [];
+    } catch (error) {
+        console.error('Error fetching traces list:', error);
+        return null;
+    }
+}
+
+export async function compareTraces(trace1Id: string | number, trace2Id: string | number): Promise<any | null> {
+    try {
+        const response = await fetch(`${config.getApiUrl()}/api/compare-traces`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                trace1_id: trace1Id.toString(),
+                trace2_id: trace2Id.toString()
+            })
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error comparing traces:', error);
+        return null;
+    }
 } 

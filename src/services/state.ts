@@ -31,9 +31,8 @@ const state: State = {
 };
 
 export function debugLog(...args: any[]) {
-    if (process.env.NODE_ENV === 'development') {
-        console.log('[PyMonitor]', ...args);
-    }
+    // Always log for now to help debug the webview opening issue
+    console.log('[PyMonitor]', ...args);
 }
 
 export { state }; 

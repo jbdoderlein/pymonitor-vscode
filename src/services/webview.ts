@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { FunctionData, StackTraceResponse } from '../types';
 import { getWebviewContent } from '../utils/webview';
 import { highlightLine, clearHighlight } from '../utils/highlight';
 import { state, debugLog } from './state';
-import { getStackTrace, getFunctionTraces, getFunctionData } from './api';
+import { getStackTrace, getFunctionTraces, getFunctionData, refreshApiData, getTracesList, compareTraces } from './api';
 
 export function showFunctionDetails(functions: FunctionData[], context: vscode.ExtensionContext) {
     state.currentFunctionData = functions;
@@ -59,6 +60,18 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
         clearHighlight();
     });
 
+    // Listen for debug session changes to update button state
+    const debugSessionListener = vscode.debug.onDidChangeActiveDebugSession((session) => {
+        console.log('[JB]Debug session changed:', session);
+        if (state.functionDetailsPanel && state.isInStackTraceView) {
+            const isDebugging = session !== undefined;
+            state.functionDetailsPanel.webview.postMessage({
+                command: 'debugSessionStatus',
+                isDebugging: isDebugging
+            });
+        }
+    });
+
     // Add message handler for the panel
     state.functionDetailsPanel.webview.onDidReceiveMessage(async message => {
         debugLog('Received message from webview:', message);
@@ -91,18 +104,100 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
             }
         } else if (message.command === 'highlightLine' && state.currentEditor) {
             // Only highlight lines when explicitly requested by the panel
-            highlightLine(state.currentEditor, message.line);
+            // Move cursor when user explicitly clicks on a line in the webview
+            highlightLine(state.currentEditor, message.line, true);
         } else if (message.command === 'reloadFunctionData') {
             debugLog('Reloading function data');
             await reloadFunctionData(context);
         } else if (message.command === 'goToSnapshotState') {
-            console.log('Go to snapshot state:', message.snapshotId, 'DB path:', message.dbPath);
+            console.log('Go to snapshot state:', message.snapshotId, 'DB path:', message.dbPath, 'Line:', message.line);
             
-            // Call the goToSnapshotState command
+            // Focus on state loading only - navigation can be added later once this works
             if (message.snapshotId !== undefined && message.dbPath) {
+                console.log('Loading snapshot state directly without navigation');
                 vscode.commands.executeCommand('pymonitor.goToSnapshotState', message.snapshotId, message.dbPath);
             } else {
                 console.error('Missing required parameters for goToSnapshotState');
+            }
+        } else if (message.command === 'reloadStackRecording') {
+            debugLog('Reloading stack recording data');
+            await reloadStackRecordingData(context);
+        } else if (message.command === 'getTracesList') {
+            debugLog('Received getTracesList command');
+            debugLog('About to call getTracesList API function');
+            try {
+                const traces = await getTracesList();
+                debugLog('getTracesList API returned:', traces?.length || 0, 'traces');
+                if (traces && state.functionDetailsPanel) {
+                    debugLog('Sending tracesListLoaded message to webview');
+                    state.functionDetailsPanel.webview.postMessage({
+                        command: 'tracesListLoaded',
+                        traces: traces
+                    });
+                    debugLog('Traces list sent to webview');
+                } else {
+                    debugLog('Failed to get traces list or panel not available');
+                    debugLog('- traces available:', !!traces);
+                    debugLog('- panel available:', !!state.functionDetailsPanel);
+                    if (!state.functionDetailsPanel) {
+                        vscode.window.showErrorMessage('Function details panel is not available');
+                    } else {
+                        vscode.window.showErrorMessage('Failed to get traces list');
+                    }
+                }
+            } catch (error) {
+                debugLog('Error getting traces list:', error);
+                vscode.window.showErrorMessage('Failed to get traces list');
+            }
+        } else if (message.command === 'compareTraces') {
+            debugLog('Received compareTraces command');
+            debugLog('Trace1Id:', message.trace1Id, 'Trace2Id:', message.trace2Id);
+            debugLog('About to call compareTraces API function');
+            try {
+                const result = await compareTraces(message.trace1Id, message.trace2Id);
+                debugLog('compareTraces API returned result:', !!result);
+                if (result && state.functionDetailsPanel) {
+                    debugLog('Getting trace data for display...');
+                    // Get the trace data for display
+                    const currentTraceData = await getStackTrace(message.trace1Id);
+                    const compareTraceData = await getStackTrace(message.trace2Id);
+                    debugLog('Current trace data loaded:', !!currentTraceData);
+                    debugLog('Compare trace data loaded:', !!compareTraceData);
+                    
+                    debugLog('Sending comparisonResult message to webview');
+                    state.functionDetailsPanel.webview.postMessage({
+                        command: 'comparisonResult',
+                        success: true,
+                        data: result,
+                        currentTraceData: currentTraceData,
+                        compareTraceData: compareTraceData
+                    });
+                    debugLog('Traces comparison result sent to webview');
+                } else {
+                    debugLog('Failed to compare traces or panel not available');
+                    debugLog('- result available:', !!result);
+                    debugLog('- panel available:', !!state.functionDetailsPanel);
+                    if (!state.functionDetailsPanel) {
+                        vscode.window.showErrorMessage('Function details panel is not available');
+                    } else {
+                        vscode.window.showErrorMessage('Failed to compare traces');
+                        state.functionDetailsPanel.webview.postMessage({
+                            command: 'comparisonResult',
+                            success: false,
+                            error: 'Failed to compare traces'
+                        });
+                    }
+                }
+            } catch (error) {
+                debugLog('Error comparing traces:', error);
+                vscode.window.showErrorMessage('Failed to compare traces');
+                if (state.functionDetailsPanel) {
+                    state.functionDetailsPanel.webview.postMessage({
+                        command: 'comparisonResult',
+                        success: false,
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
+                }
             }
         }
     });
@@ -188,7 +283,7 @@ function updateFunctionDetailsPanel(functions: FunctionData[], context: vscode.E
             <div class="time-info">
                 <div>Start: ${new Date(func.start_time).toLocaleString()}</div>
                 <div>End: ${new Date(func.end_time).toLocaleString()}</div>
-                <div>Duration: ${func.duration.toFixed(3)}s</div>
+                <div>Duration: ${func.duration !== null && func.duration !== undefined ? func.duration.toFixed(3) : 'unknown'}s</div>
             </div>
             <div class="section">
                 <h4>Arguments</h4>
@@ -383,7 +478,26 @@ export async function exploreStackTrace(functionId: number | string, context: vs
         // Send initial snapshots to initialize the UI
         state.functionDetailsPanel.webview.postMessage({
             command: 'setSnapshots',
-            snapshots: data.frames
+            snapshots: data.frames,
+            functionId: data.function.id,
+            functionData: data.function
+        });
+
+        // Send database path to the webview
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(state.currentEditor?.document.uri!);
+        if (workspaceFolder) {
+            const dbPath = path.join(workspaceFolder.uri.fsPath, 'main.db');
+            state.functionDetailsPanel.webview.postMessage({
+                command: 'setDbPath',
+                dbPath: dbPath
+            });
+        }
+
+        // Send debug session status to enable/disable the "Load State" button
+        const isDebugging = vscode.debug.activeDebugSession !== undefined;
+        state.functionDetailsPanel.webview.postMessage({
+            command: 'debugSessionStatus',
+            isDebugging: isDebugging
         });
 
         // Highlight the first step's line
@@ -392,7 +506,8 @@ export async function exploreStackTrace(functionId: number | string, context: vs
             // Only highlight if we have a line number
             if (lineNumber) {
                 if (state.currentEditor) {
-                    highlightLine(state.currentEditor, lineNumber);
+                    // Don't move cursor when just refreshing highlights during data reload
+                    highlightLine(state.currentEditor, lineNumber, false);
                 }
             }
         }
@@ -403,5 +518,65 @@ export async function exploreStackTrace(functionId: number | string, context: vs
         } else {
             vscode.window.showErrorMessage('Failed to explore stack trace');
         }
+    }
+}
+
+/**
+ * Reload stack recording data for the current function
+ */
+async function reloadStackRecordingData(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        if (!state.functionDetailsPanel || !state.currentStackTraceData) {
+            debugLog('No active stack recording panel or data');
+            return;
+        }
+
+        debugLog('Reloading stack recording data...');
+        
+        // First refresh the API data
+        const refreshSuccess = await refreshApiData();
+        if (!refreshSuccess) {
+            debugLog('WARNING: Failed to refresh API data, continuing anyway...');
+        }
+
+        // Get the function ID from current stack trace data
+        const functionId = state.currentStackTraceData.function.id;
+        if (!functionId) {
+            debugLog('No function ID available for reload');
+            return;
+        }
+
+        debugLog(`Fetching fresh stack trace data for function ID: ${functionId}`);
+        
+        // Fetch fresh stack trace data
+        const freshData = await getStackTrace(functionId);
+        if (!freshData) {
+            debugLog('Failed to fetch fresh stack trace data');
+            vscode.window.showErrorMessage('Failed to reload stack recording data');
+            return;
+        }
+
+        debugLog(`Received ${freshData.frames.length} frames in fresh data`);
+
+        // Update the current stack trace data in state
+        state.currentStackTraceData = freshData;
+
+        // Send updated data to the webview
+        if (state.functionDetailsPanel) {
+            state.functionDetailsPanel.webview.postMessage({
+                command: 'updateStackTrace',
+                data: freshData,
+                snapshots: freshData.frames
+            });
+            
+            debugLog('Stack recording data reloaded and sent to webview');
+            
+            // Show a brief success message
+            vscode.window.showInformationMessage('Stack recording data reloaded', { modal: false });
+        }
+
+    } catch (error) {
+        debugLog('Error reloading stack recording data:', error);
+        vscode.window.showErrorMessage(`Failed to reload stack recording data: ${error}`);
     }
 } 

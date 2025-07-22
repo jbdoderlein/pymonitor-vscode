@@ -7,10 +7,102 @@
     <link rel="stylesheet" href="css/common.css">
     <link rel="stylesheet" href="css/stackRecording.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/microsoft/vscode-codicons/dist/codicon.css">
+    <!-- Add D3.js for graph visualization -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="js/stackRecording.js" defer></script>
 </head>
 <body>
     <h2>Stack Recording</h2>
+    
+    <!-- Header with controls -->
+    <div class="header-controls">
+        <button id="reload-button" class="reload-button" title="Reload stack recording data">
+            <span class="codicon codicon-refresh"></span>
+        </button>
+        
+        <!-- Trace Comparison Section -->
+        <div class="trace-comparison-section">
+            <label for="compare-trace-select" class="comparison-label">Compare with:</label>
+            <select id="compare-trace-select" class="trace-select">
+                <option value="">Select trace to compare...</option>
+            </select>
+            <button id="compare-button" class="compare-button" disabled>
+                <span class="codicon codicon-compare-changes"></span>
+                Compare
+            </button>
+            <button id="close-comparison-button" class="close-comparison-button" style="display: none;">
+                <span class="codicon codicon-close"></span>
+                Close
+            </button>
+        </div>
+    </div>
+    
     <div id="content"></div>
+    
+    <!-- Comparison View (initially hidden) -->
+    <div id="comparison-view" class="comparison-view" style="display: none;">
+        <div class="comparison-header">
+            <h3>Trace Comparison</h3>
+            <div class="comparison-traces-info">
+                <div class="trace-info">
+                    <strong>Current Trace:</strong> <span id="current-trace-info">-</span>
+                </div>
+                <div class="trace-info">
+                    <strong>Compare Trace:</strong> <span id="compare-trace-info">-</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Split view: Code on left, Graph on right -->
+        <div class="comparison-content">
+            <!-- Code Comparison Column -->
+            <div class="code-comparison-panel">
+                <div class="panel-header">
+                    <h4>Source Code Comparison</h4>
+                </div>
+                <div class="code-panels">
+                    <div class="code-panel">
+                        <div class="code-panel-header">Current Trace</div>
+                        <div class="code-container" id="code-container-current"></div>
+                    </div>
+                    <div class="code-panel">
+                        <div class="code-panel-header">Compare Trace</div>
+                        <div class="code-container" id="code-container-compare"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graph Visualization Column -->
+            <div class="graph-panel">
+                <div class="panel-header">
+                    <h4>Execution Diff Graph</h4>
+                    <div class="graph-controls">
+                        <button id="reset-graph-btn" class="graph-control-btn" title="Reset Graph View">
+                            <span class="codicon codicon-refresh"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="graph-container" id="graph-container">
+                    <div id="loading-graph-message" class="loading-message">
+                        <div class="loading-spinner">
+                            <span class="codicon codicon-loading"></span>
+                        </div>
+                        <p>Generating comparison graph...</p>
+                    </div>
+                    <svg id="graph-svg" class="graph-svg"></svg>
+                </div>
+                
+                <!-- Graph Stats -->
+                <div class="graph-stats" id="graph-stats">
+                    <div class="stats-content" id="stats-content">
+                        <!-- Stats will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tooltip for graph elements -->
+    <div id="tooltip" class="tooltip"></div>
 </body>
 </html> 
