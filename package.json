@@ -41,7 +41,11 @@
       },
       {
         "command": "pymonitor.hotswapLine",
-        "title": "PyMonitor: Hot Swap Line"
+        "title": "PyMonitor: Hot Swap Line",
+        "icon": {
+          "light": "images/commands/lightning.svg",
+          "dark": "images/commands/lightning.svg"
+        }
       },
       {
         "command": "pymonitor.evaluate",
@@ -70,6 +74,15 @@
     ],
     "codeLens": {
       "language": "python"
+    },
+    "menus": {
+      "debug/toolBar": [
+        {
+          "command": "pymonitor.hotswapLine",
+          "group": "navigation@100",
+          "when": "inDebugMode && debugType == python"
+        }
+      ]
     }
   },
   "scripts": {
