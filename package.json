@@ -40,6 +40,10 @@
         "title": "PyMonitor: Debug Step Over (Next)"
       },
       {
+        "command": "pymonitor.hotswapLine",
+        "title": "PyMonitor: Hot Swap Line"
+      },
+      {
         "command": "pymonitor.evaluate",
         "title": "PyMonitor: Evaluate Expression in Debug Context"
       },

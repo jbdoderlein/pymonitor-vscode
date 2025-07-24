@@ -222,6 +222,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		await debugService.stepOver();
 	});
 
+	// Register the step over (next) command
+	const hotswapLineCommand = vscode.commands.registerCommand('pymonitor.hotswapLine', async () => {
+		const debugService = DebuggerService.getInstance();
+		await debugService.hotswapLine();
+	});
+
 	// Register the evaluate command
 	const evaluateCommand = vscode.commands.registerCommand('pymonitor.evaluate', async () => {
 		// Get the input from the user

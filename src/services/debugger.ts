@@ -3,6 +3,7 @@ import { FunctionInfo } from './treeSitter';
 import { debugLog } from './state';
 import { getFunctionData, getSessionsList, getSessionDetails, getFunctionTraces, refreshApiData } from './api';
 import { showFunctionDetails, exploreStackTrace } from './webview';
+import { threadId } from 'worker_threads';
 
 /**
  * DebugConfiguration for a Python function
@@ -586,13 +587,13 @@ export class DebuggerService {
                 content += `    monitoringpy.end_session()\n`;
             } else {
                 // Standard approach with simplified script
-                content += `from monitoringpy.interface.debugger import inject_do_jump\n\n`;
+                content += `from monitoringpy.interface.debugger import inject_do_jump, hotline\n\n`;
                 content += `sys.path.insert(0, "${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}")\n`;
                 content += `db_path = os.path.join("${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}", "main.db")\n`;
                 content += `monitor = monitoringpy.init_monitoring(db_path=db_path, in_memory=False)\n`;
                 content += `from ${moduleName} import ${functionInfo.name}\n`;
-                content += `${functionInfo.name} = monitoringpy.pymonitor(mode="line")(${functionInfo.name})\n`;
-                content += `monitoringpy.interface.debugger.inject_do_jump(${functionInfo.name})\n\n`;
+                content += `monitoringpy.interface.debugger.hotline(${functionInfo.name})\n`;
+                content += `monitoringpy.pymonitor(mode="line")(${functionInfo.name})\n\n`;
                 
                 content += `# Call the function\n`;
                 content += `if __name__ == "__main__":\n`;
@@ -665,12 +666,15 @@ export class DebuggerService {
             // Create the arguments for the evaluate request
             const args: any = {
                 expression: expression,
-                context: 'variables'
+                context: 'repl'
             };
 
             // Add frameId if provided
             if (frameId !== undefined) {
                 args.frameId = frameId;
+            } else {
+                const stackTrace = await session.customRequest('stackTrace', { threadId: threadId || 1 });
+                args.frameId = stackTrace.stackFrames[0].id;
             }
 
             // Add threadId if provided
@@ -708,6 +712,48 @@ export class DebuggerService {
             console.error(`Error evaluating expression: ${expression}`);
             console.error(`Error details:`, error);
             return null;
+        }
+    }
+
+    public async hotswapLine(){
+        try {
+            const session = vscode.debug.activeDebugSession;
+            if (!session) {
+                console.log('No active debug session');
+                return;
+            }
+
+            // Get the current stack trace
+            const stackTrace = await session.customRequest('stackTrace', { threadId: 1 });
+            if (!stackTrace || !stackTrace.stackFrames || stackTrace.stackFrames.length === 0) {
+                console.log('No stack frames found');
+                return;
+            }
+
+            // Get the current frame ID
+            const frameId = stackTrace.stackFrames[0].id;
+
+            // Send the hotswap request
+            // hot swap is evaluate "_ahs_reload()", continue, and evaluate "_ahs_correct_jump()"
+            const response1 = await session.customRequest('evaluate', { 
+                expression: `_ahs_reload()`,
+                frameId: frameId,
+                threadId: 1,
+                context: 'repl',
+            });
+            const response2 = await session.customRequest('continue', { 
+                threadId: 1,
+            });
+            const response3 = await session.customRequest('evaluate', { 
+                expression: `_ahs_correct_jump()`,
+                frameId: frameId,
+                threadId: 1,
+                context: 'repl',
+            });
+            console.log('Hotswap response:', response1, response2, response3);
+        } catch (error) {
+            console.error('Error during hotswap:', error);
+            vscode.window.showErrorMessage(`Failed to hotswap line: ${error}`);
         }
     }
 
