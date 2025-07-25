@@ -36,10 +36,6 @@
         "title": "Debug Python Function"
       },
       {
-        "command": "pymonitor.stepOver",
-        "title": "PyMonitor: Debug Step Over (Next)"
-      },
-      {
         "command": "pymonitor.hotswapLine",
         "title": "PyMonitor: Hot Swap Line",
         "icon": {
@@ -48,28 +44,16 @@
         }
       },
       {
-        "command": "pymonitor.evaluate",
-        "title": "PyMonitor: Evaluate Expression in Debug Context"
-      },
-      {
         "command": "pymonitor.goToSnapshotState",
         "title": "PyMonitor: Go To Snapshot State"
-      },
-      {
-        "command": "pymonitor.gotoLine",
-        "title": "PyMonitor: Go To Line in Debug Session"
       },
       {
         "command": "pymonitor.gotoLineAndLoadState",
         "title": "PyMonitor: Navigate to Line and Load Snapshot State"
       },
       {
-        "command": "pymonitor.startLiveRecording",
-        "title": "PyMonitor: Start Live Recording"
-      },
-      {
-        "command": "pymonitor.stopLiveRecording",
-        "title": "PyMonitor: Stop Live Recording"
+        "command": "graph.update",
+        "title": "Graph: Update"
       }
     ],
     "codeLens": {
@@ -81,6 +65,30 @@
           "command": "pymonitor.hotswapLine",
           "group": "navigation@100",
           "when": "inDebugMode && debugType == python"
+        }
+      ]
+    },
+    "views": {
+      "debug": [
+        {
+          "id": "omniscientDebugPanel",
+          "name": "omniscientDebugPanel",
+          "icon": "images/commands/lightning.svg"
+        },
+        {
+          "id": "graphView",
+          "name": "Graph",
+          "type": "webview",
+          "icon": "$(git-branch)"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "graphPanel",
+          "title": "Graph",
+          "icon": "$(git-branch)"
         }
       ]
     }

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { FunctionData, StackTraceResponse } from '../types';
+import { GraphWebviewProvider } from '../providers/graphWebviewProvider';
 
 export interface State {
     functionDataCache: Map<string, FunctionData[]>;
@@ -13,6 +14,7 @@ export interface State {
     currentHighlight: vscode.TextEditorDecorationType | null;
     currentStackTraceData: StackTraceResponse | null;
     isProgrammaticSelectionChange: boolean;
+    graphWebviewProvider: GraphWebviewProvider | undefined; // Reference to the graph webview provider
 }
 
 // Create a singleton instance of the state
@@ -27,7 +29,8 @@ const state: State = {
     currentFunctionData: undefined,
     currentHighlight: null,
     currentStackTraceData: null,
-    isProgrammaticSelectionChange: false
+    isProgrammaticSelectionChange: false,
+    graphWebviewProvider: undefined // Initialize as undefined
 };
 
 export function debugLog(...args: any[]) {

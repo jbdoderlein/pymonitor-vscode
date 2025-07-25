@@ -191,3 +191,17 @@ export async function compareTraces(trace1Id: string | number, trace2Id: string 
         return null;
     }
 } 
+
+export async function getGraph(functionID: string): Promise<any | null> {
+    try {
+        const response = await fetch(`${config.getApiUrl()}/api/function-call/${functionID}/graph`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json() as SnapshotDetails;
+        return data;
+    } catch (error) {
+        console.error('Error fetching snapshot details:', error);
+        return null;
+    }
+}

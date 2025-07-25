@@ -13,6 +13,8 @@ import { state, debugLog } from './services/state';
 import { ConfigService } from './services/config';
 import { DebugFunctionCodeLensProvider } from './services/debugCodeLens';
 import { DebuggerService } from './services/debugger';
+import { GraphWebviewProvider } from './providers/graphWebviewProvider';
+import { updateGraphData } from './services/graph';
 
 const execAsync = promisify(exec);
 const config = ConfigService.getInstance();
@@ -75,14 +77,14 @@ async function startWebServer(pythonPath: string, workspaceRoot: string): Promis
 		// monitoringpy.interface.web.explorer basic3.db --mode api
 		const command = `${pythonPath} -m monitoringpy.interface.web.explorer ${dbPath} --mode api`;
 		console.log('Starting server with command:', command);
-		
+
 		webServerProcess = exec(command, { cwd: workspaceRoot });
-		
+
 		// Capture and log server output
 		webServerProcess.stdout?.on('data', (data) => {
 			console.log('Server stdout:', data.toString());
 		});
-		
+
 		webServerProcess.stderr?.on('data', (data) => {
 			console.error('Server stderr:', data.toString());
 		});
@@ -122,51 +124,15 @@ export async function activate(context: vscode.ExtensionContext) {
 	statusBarItem.command = 'pymonitor.restartServer';
 
 	// Add Debug Adapter Tracker to log DAP communication and handle stepping
-	const debugTrackerFactory = vscode.debug.registerDebugAdapterTrackerFactory('*', {
+	vscode.debug.registerDebugAdapterTrackerFactory('*', {
 		createDebugAdapterTracker(session: vscode.DebugSession) {
 			return {
-				onWillSendMessage: (message: any) => {
-					console.log(`DAP -> SEND: ${JSON.stringify(message)}`);
-					
-					// Detect stepping commands being sent
-					if (message.command === 'next' || message.command === 'stepIn' || 
-						message.command === 'stepOut' || message.command === 'continue') {
-						console.log(`[PyMonitor] Detected stepping command: ${message.command}`);
-						// Update after a brief delay to allow the debugger to process
-						setTimeout(async () => {
-							await updateStackRecordingIfDebugging();
-						}, 500);
-					}
-				},
-				onDidReceiveMessage: (message: any) => {
-					// Skip noisy events to reduce log spam
-					/* if (message.type === 'event' && 
-						(message.event === 'output' || 
-						 message.event === 'continued' || 
-						 message.event === 'module')) {
-						return;
-					} */
-					console.log(`DAP <- RECEIVE: ${JSON.stringify(message)}`);
-					
-					// Handle stopped events (breakpoints, stepping completion)
-					if (message.type === 'event' && message.event === 'stopped' && session.type === 'python') {
-						console.log(`[PyMonitor] Python debugger stopped: ${message.body?.reason || 'unknown reason'}`);
-						// Update immediately when execution stops
-						setTimeout(async () => {
-							await updateStackRecordingIfDebugging();
-						}, 200);
-					}
-				},
-				onError: (error: Error) => {
-					console.error(`DAP ERROR: ${error.message}`);
-				},
-				onExit: (code: number, signal: string) => {
-					console.log(`DAP EXIT: code=${code}, signal=${signal}`);
-				}
+				onWillReceiveMessage: async m => { if (m["command"] === "stackTrace"){await updateStackRecordingIfDebugging(); }},
+				//onDidSendMessage: m => console.log(`< ${JSON.stringify(m, undefined, 2)}`)
 			};
 		}
 	});
-	context.subscriptions.push(debugTrackerFactory);
+	//context.subscriptions.push(debugTrackerFactory);
 
 	// Register commands
 	const checkCommand = vscode.commands.registerCommand('pymonitor.checkPython', checkPythonEnvironment);
@@ -205,7 +171,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Register debug code lens provider
 	const debugCodeLensProvider = new DebugFunctionCodeLensProvider();
 	context.subscriptions.push(vscode.languages.registerCodeLensProvider(
-		{ scheme: 'file', language: 'python' }, 
+		{ scheme: 'file', language: 'python' },
 		debugCodeLensProvider
 	));
 
@@ -239,7 +205,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		if (expression) {
 			const debugService = DebuggerService.getInstance();
 			const result = await debugService.evaluate(expression);
-			
+
 			if (result) {
 				// Show the result in a notification
 				vscode.window.showInformationMessage(`Evaluation result: ${result.result}`);
@@ -267,20 +233,20 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Register the "Go to Line" command
 	const gotoLineCommand = vscode.commands.registerCommand('pymonitor.gotoLine', async () => {
 		const debugService = DebuggerService.getInstance();
-		
+
 		// Check if there's an active debug session
 		if (!vscode.debug.activeDebugSession) {
 			vscode.window.showErrorMessage('No active debug session found');
 			return;
 		}
-		
+
 		// Get the active editor
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			vscode.window.showErrorMessage('No active editor found');
 			return;
 		}
-		
+
 		// First get input from user for the line
 		const lineInput = await vscode.window.showInputBox({
 			prompt: 'Enter line number to find goto targets',
@@ -290,50 +256,50 @@ export async function activate(context: vscode.ExtensionContext) {
 				return isNaN(lineNumber) || lineNumber <= 0 ? 'Please enter a positive number' : null;
 			}
 		});
-		
+
 		if (!lineInput) {
 			return; // User cancelled
 		}
-		
+
 		const lineNumber = parseInt(lineInput);
-		
+
 		// Get the goto targets for the line
 		const targets = await debugService.getGotoTargets(lineNumber, editor.document.uri);
-		
+
 		if (!targets || targets.length === 0) {
 			vscode.window.showErrorMessage(`No valid goto targets found for line ${lineNumber}`);
 			return;
 		}
-		
+
 		// If there's only one target, use it directly
 		if (targets.length === 1) {
 			await debugService.gotoLine(lineNumber);
 			return;
 		}
-		
+
 		// If there are multiple targets, show a quick pick
 		const targetItems = targets.map(target => ({
 			label: `Line ${target.line}: ${target.label || 'Target'}`,
 			description: target.instructionPointerReference || `ID: ${target.id}`,
 			target: target
 		}));
-		
+
 		const selectedTarget = await vscode.window.showQuickPick(targetItems, {
 			placeHolder: 'Select a goto target'
 		});
-		
+
 		if (selectedTarget) {
 			// Create custom goto request with the selected target ID
 			const threadId = (await vscode.debug.activeDebugSession.customRequest('threads'))
 				.threads[0].id;
-			
+
 			const gotoArgs = {
 				threadId: threadId,
 				targetId: selectedTarget.target.id
 			};
-			
+
 			console.log(`Sending direct goto request with args: ${JSON.stringify(gotoArgs)}`);
-			
+
 			try {
 				const response = await vscode.debug.activeDebugSession.customRequest('goto', gotoArgs);
 				console.log('Goto response:', response);
@@ -346,7 +312,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Register the combined "Go to Line and Load State" command
-	const gotoLineAndLoadStateCommand = vscode.commands.registerCommand('pymonitor.gotoLineAndLoadState', 
+	const gotoLineAndLoadStateCommand = vscode.commands.registerCommand('pymonitor.gotoLineAndLoadState',
 		async (targetLine: number, snapshotId: number, dbPath: string) => {
 			if (targetLine === undefined || snapshotId === undefined || !dbPath) {
 				console.error('Missing required parameters for gotoLineAndLoadState command');
@@ -370,7 +336,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Track debugging session and update stack recording view
 	const debugStartListener = vscode.debug.onDidStartDebugSession(async (session) => {
 		console.log('[PyMonitor] Debug session started:', session.type);
-		
+
 		// Start polling for updates when debugging Python
 		if (session.type === 'python') {
 			console.log('[PyMonitor] Starting debug polling for stack recording updates');
@@ -378,11 +344,11 @@ export async function activate(context: vscode.ExtensionContext) {
 				clearInterval(debugPollingInterval);
 			}
 			// Poll every 2 seconds while debugging
-			debugPollingInterval = setInterval(async () => {
-				await updateStackRecordingIfDebugging();
-			}, 10000);
+			// debugPollingInterval = setInterval(async () => {
+			//	await updateStackRecordingIfDebugging();
+			// }, 10000);
 		}
-		
+
 		// Notify webview about debug session status
 		if (state.functionDetailsPanel && state.isInStackTraceView) {
 			state.functionDetailsPanel.webview.postMessage({
@@ -391,11 +357,11 @@ export async function activate(context: vscode.ExtensionContext) {
 			});
 		}
 	});
-	
+
 	// This is an important event that fires when stepping, continuing, etc.
 	const activeDebugSessionChange = vscode.debug.onDidChangeActiveDebugSession(async (session) => {
 		console.log('[PyMonitor] Active debug session changed:', session?.type);
-		
+
 		// Notify webview about debug session status
 		if (state.functionDetailsPanel && state.isInStackTraceView) {
 			state.functionDetailsPanel.webview.postMessage({
@@ -403,24 +369,24 @@ export async function activate(context: vscode.ExtensionContext) {
 				isDebugging: !!session
 			});
 		}
-		
+
 		if (session?.type === 'python') {
 			console.log('[PyMonitor] Python session change - updating stack recording');
 			await updateStackRecordingIfDebugging();
 		}
 	});
-	
+
 	// Listen for debug session end
 	const debugEndListener = vscode.debug.onDidTerminateDebugSession(async (session) => {
 		console.log('[PyMonitor] Debug session ended:', session.type);
-		
+
 		// Stop polling when Python debugging ends
 		if (session.type === 'python' && debugPollingInterval) {
 			console.log('[PyMonitor] Stopping debug polling');
 			clearInterval(debugPollingInterval);
 			debugPollingInterval = null;
 		}
-		
+
 		// Notify webview about debug session status
 		if (state.functionDetailsPanel && state.isInStackTraceView) {
 			state.functionDetailsPanel.webview.postMessage({
@@ -429,44 +395,44 @@ export async function activate(context: vscode.ExtensionContext) {
 			});
 		}
 	});
-	
+
 	// This triggers on breakpoint hits and step operations
 	const debugSessionStateChange = vscode.debug.onDidChangeBreakpoints(async () => {
 		console.log('[PyMonitor] Breakpoints changed - triggering stack recording update');
 		await updateStackRecordingIfDebugging();
 	});
-	
+
 	// Listen for debug events, particularly stepping and execution
 	const debugStepListener = vscode.debug.onDidReceiveDebugSessionCustomEvent(async (event) => {
 		console.log(`[PyMonitor] Debug event received: ${event.event}`, event.body);
-		if (event.event.startsWith('step') || 
-		    event.event === 'continue' || 
-		    event.event === 'stopOnEntry' || 
-		    event.event === 'breakpoint') {
+		if (event.event.startsWith('step') ||
+			event.event === 'continue' ||
+			event.event === 'stopOnEntry' ||
+			event.event === 'breakpoint') {
 			console.log(`[PyMonitor] Event ${event.event} matches update criteria - updating stack recording`);
 			await updateStackRecordingIfDebugging();
 		} else {
 			console.log(`[PyMonitor] Event ${event.event} doesn't match criteria - no update`);
 		}
 	});
-	
+
 	// Update when a thread stops - this is the ideal time to open the stack recording
 	// for the first time as we know the debugger has hit a breakpoint
 	const threadStopped = vscode.debug.onDidReceiveDebugSessionCustomEvent(async (event) => {
 		if (event.event === 'stopped') {
 			console.log('Thread stopped, reason:', event.body?.reason);
-			
+
 			// This is the ideal time to open the stack recording initially
 			// as we know the debugger has hit a breakpoint or stopped somewhere
 			if (event.body?.reason === 'breakpoint' || event.body?.reason === 'entry') {
 				console.log('Opening stack recording after breakpoint/entry hit');
 				await tryOpenStackRecordingForActiveFunction();
 			}
-			
+
 			await updateStackRecordingIfDebugging();
 		}
 	});
-	
+
 	// This function will try to identify and open the stack recording for the function
 	// being debugged, but only if we're not already showing a stack recording
 	async function tryOpenStackRecordingForActiveFunction() {
@@ -474,14 +440,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		if (state.isInStackTraceView) {
 			return;
 		}
-		
+
 		// Get the current file
 		const editor = vscode.window.activeTextEditor;
-		if (!editor) return;
-		
+		if (!editor) {return;}
+
 		const filePath = editor.document.fileName;
 		console.log(`Looking for function data for ${filePath}`);
-		
+
 		// Get the most recent function execution data - should correspond to active debugging
 		try {
 			// Fetch fresh data from the API
@@ -490,25 +456,25 @@ export async function activate(context: vscode.ExtensionContext) {
 				console.log('No function data found');
 				return;
 			}
-			
+
 			// Store in state and update cache
 			state.currentFunctionData = functions;
 			state.functionDataCache.set(filePath, functions);
-			
+
 			// Look for the most recent function call (should be the one being debugged)
-			const latestFunction = functions.sort((a, b) => 
+			const latestFunction = functions.sort((a, b) =>
 				new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
 			)[0];
-			
+
 			console.log('Latest function call found:', latestFunction.id);
-			
+
 			// Open the stack recording view for this function
 			await vscode.commands.executeCommand('pymonitor.openStackRecording', latestFunction.id);
 		} catch (err) {
 			console.error('Failed to open stack recording view:', err);
 		}
 	}
-	
+
 	// Helper function to update stack recording view if debugging is active
 	async function updateStackRecordingIfDebugging() {
 		// Check if debugging is active
@@ -516,24 +482,24 @@ export async function activate(context: vscode.ExtensionContext) {
 			console.log('[PyMonitor] updateStackRecordingIfDebugging: No active Python debug session');
 			return;
 		}
-		
+
 		// Only update if we're in stack trace view
 		if (!state.isInStackTraceView || !state.currentStackTraceData || !state.functionDetailsPanel) {
 			console.log(`[PyMonitor] updateStackRecordingIfDebugging: Not in stack trace view or missing data - isInStackTraceView: ${state.isInStackTraceView}, hasStackTraceData: ${!!state.currentStackTraceData}, hasPanel: ${!!state.functionDetailsPanel}`);
 			return;
 		}
-		
+
 		console.log('[PyMonitor] Updating stack recording during debugging');
-		
+
 		// Get the function ID from the current stack trace data
 		const functionId = state.currentStackTraceData.function.id;
 		if (!functionId) {
 			console.log('No function ID found in current stack trace data');
 			return;
 		}
-		
+
 		console.log(`Refreshing stack recording for function ID: ${functionId}`);
-		
+
 		// Fetch fresh data directly from API without caching
 		try {
 			// First, refresh the API data to ensure we get the latest
@@ -544,7 +510,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			} else {
 				console.log('[PyMonitor] API data refreshed successfully');
 			}
-			
+
 			// Bypass command and call API directly to avoid any caching
 			console.log(`[PyMonitor] Fetching fresh stack trace data for function ID: ${functionId}`);
 			const freshData = await getStackTrace(functionId);
@@ -552,12 +518,12 @@ export async function activate(context: vscode.ExtensionContext) {
 				console.log('[PyMonitor] No updated stack recording data found');
 				return;
 			}
-			
+
 			console.log(`[PyMonitor] Received fresh data with ${freshData.frames.length} frames`);
-			
+
 			// Always update state with fresh data
 			state.currentStackTraceData = freshData;
-			
+
 			// Send updated data to webview directly
 			if (state.functionDetailsPanel) {
 				console.log('[PyMonitor] Sending updated data to webview...');
@@ -573,8 +539,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		} catch (err) {
 			console.error('Failed to update stack recording:', err);
 		}
+
+		// update the graph view if available
+		if (state.graphWebviewProvider) {
+			console.log('[PyMonitor] Updating graph data for function ID:', functionId);
+			updateGraphData(functionId.toString());
+		}
 	}
-	
+
 	// Open stack recording view command
 	const openStackRecordingCommand = vscode.commands.registerCommand('pymonitor.openStackRecording', async (functionId) => {
 		try {
@@ -582,9 +554,9 @@ export async function activate(context: vscode.ExtensionContext) {
 				console.error('No function ID provided to openStackRecording');
 				return;
 			}
-			
+
 			console.log(`Opening stack recording for function ID: ${functionId}`);
-			
+
 			// Use the exploreStackTrace function to open the view
 			await exploreStackTrace(functionId, extensionContext);
 			return true;
@@ -593,42 +565,42 @@ export async function activate(context: vscode.ExtensionContext) {
 			return false;
 		}
 	});
-	
+
 	// Refresh stack recording data command - simplified to bypass caching
 	const refreshStackRecordingCommand = vscode.commands.registerCommand('pymonitor.refreshStackRecording', async (functionId) => {
 		try {
 			if (!functionId || !state.functionDetailsPanel) {
 				return null;
 			}
-			
+
 			console.log(`Directly refreshing stack recording for function ID: ${functionId}`);
-			
+
 			// Fetch fresh data from API without caching
 			const data = await getStackTrace(functionId);
 			if (!data) {
 				console.log('No updated stack recording data found');
 				return null;
 			}
-			
+
 			console.log(`Received fresh data with ${data.frames.length} frames`);
-			
+
 			// Update state
 			state.currentStackTraceData = data;
-			
+
 			// Send updated data to webview
 			state.functionDetailsPanel.webview.postMessage({
 				command: 'updateStackTrace',
 				data: data,
 				snapshots: data.frames
 			});
-			
+
 			return data;
 		} catch (error) {
 			console.error('Error refreshing stack recording:', error);
 			return null;
 		}
 	});
-	
+
 	context.subscriptions.push(debugStartListener);
 	context.subscriptions.push(activeDebugSessionChange);
 	context.subscriptions.push(debugSessionStateChange);
@@ -642,7 +614,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const documentListener = vscode.workspace.onDidOpenTextDocument(async (document) => {
 		if (document.languageId === 'python') {
 			console.log(`Python file opened: ${document.fileName}`);
-			
+
 			// Check if server is running
 			const serverReady = await waitForServer();
 			if (!serverReady) {
@@ -678,13 +650,13 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (state.isProgrammaticSelectionChange) {
 				return;
 			}
-			
-			if (event.textEditor === state.currentEditor && 
-				event.selections.length > 0 && 
+
+			if (event.textEditor === state.currentEditor &&
+				event.selections.length > 0 &&
 				state.isInStackTraceView) {
 				const line = event.selections[0].active.line + 1;
 				debugLog('Editor line clicked:', line);
-				
+
 				// Send line click to panel, let it handle the logic
 				if (state.functionDetailsPanel) {
 					state.functionDetailsPanel.webview.postMessage({
@@ -737,7 +709,21 @@ export async function activate(context: vscode.ExtensionContext) {
 	}
 
 	context.subscriptions.push(checkCommand, restartCommand, showFunctionDetailsCommand, documentListener, statusBarItem);
+
+	// Initialize the graph example (this registers the graph webview provider)
+	// new GraphExample(context);
+	let graphProvider = new GraphWebviewProvider(context);
+	// Register the webview provider
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(
+			GraphWebviewProvider.viewType,
+			graphProvider
+		)
+	);
+	state.graphWebviewProvider = graphProvider; // Store reference in state
 }
+
+
 
 // This method is called when your extension is deactivated
 export function deactivate() {
@@ -749,7 +735,7 @@ export function deactivate() {
 	if (statusBarItem) {
 		statusBarItem.dispose();
 	}
-	
+
 	// Clean up debug polling
 	if (debugPollingInterval) {
 		clearInterval(debugPollingInterval);
