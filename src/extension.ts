@@ -15,6 +15,7 @@ import { DebugFunctionCodeLensProvider } from './services/debugCodeLens';
 import { DebuggerService } from './services/debugger';
 import { GraphWebviewProvider } from './providers/graphWebviewProvider';
 import { updateGraphData } from './services/graph';
+import { NodeDependenciesProvider, LineInfo } from './providers/testProvider';
 
 const execAsync = promisify(exec);
 const config = ConfigService.getInstance();
@@ -524,6 +525,9 @@ export async function activate(context: vscode.ExtensionContext) {
 			// Always update state with fresh data
 			state.currentStackTraceData = freshData;
 
+			// Refresh the tree view  by calling omniscientDebugPanel.refreshEntry
+			vscode.commands.executeCommand('omniscientDebugPanel.refreshEntry');
+
 			// Send updated data to webview directly
 			if (state.functionDetailsPanel) {
 				console.log('[PyMonitor] Sending updated data to webview...');
@@ -721,6 +725,20 @@ export async function activate(context: vscode.ExtensionContext) {
 		)
 	);
 	state.graphWebviewProvider = graphProvider; // Store reference in state
+	const rootPath =
+    vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
+      ? vscode.workspace.workspaceFolders[0].uri.fsPath
+      : "undefined";
+  	const nodeDependenciesProvider = new NodeDependenciesProvider(rootPath);
+  	vscode.window.registerTreeDataProvider('omniscientDebugPanel', nodeDependenciesProvider);
+  	vscode.commands.registerCommand('omniscientDebugPanel.refreshEntry', () =>
+    	nodeDependenciesProvider.refresh()
+  	);
+
+	vscode.commands.registerCommand('omniscientDebugPanel.gotoLine', (item: LineInfo) => {
+		vscode.window.showInformationMessage(`Going to line: ${item}`);
+	});
+
 }
 
 

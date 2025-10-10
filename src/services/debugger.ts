@@ -559,6 +559,7 @@ export class DebuggerService {
             // If using reanimation, use the new monitoringpy.core.reanimation API
             if (useReanimation && this.selectedFunctionCallId) {
                 content += `from monitoringpy.core.reanimation import execute_function_call, load_execution_data\n\n`;
+                content += `from monitoringpy.interface.debugger import inject_do_jump, hotline\n\n`;
                 content += `# Add workspace to Python path\n`;
                 content += `sys.path.insert(0, "${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}")\n`;
                 content += `db_path = os.path.join("${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}", "main.db")\n`;
@@ -575,7 +576,8 @@ export class DebuggerService {
                 content += `            db_path_or_session=db_path,\n`;
                 content += `            import_path="${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}",\n`;
                 content += `            enable_monitoring=True,\n`;
-                content += `            reload_module=True\n`;
+                content += `            reload_module=True,\n`;
+                content += `            additional_decorators=[monitoringpy.interface.debugger.hotline,monitoringpy.pymonitor(mode="line")]\n`;
                 content += `        )\n`;
                 content += `        \n`;
                 content += `        print(f"Reanimation completed successfully with result: {result}")\n`;
@@ -757,6 +759,48 @@ export class DebuggerService {
         }
     }
 
+    public async hotswapSpecificLine(inputLine: number){
+        try {
+            const session = vscode.debug.activeDebugSession;
+            if (!session) {
+                console.log('No active debug session');
+                return;
+            }
+
+            // Get the current stack trace
+            const stackTrace = await session.customRequest('stackTrace', { threadId: 1 });
+            if (!stackTrace || !stackTrace.stackFrames || stackTrace.stackFrames.length === 0) {
+                console.log('No stack frames found');
+                return;
+            }
+
+            // Get the current frame ID
+            const frameId = stackTrace.stackFrames[0].id;
+
+            // Send the hotswap request
+            // hot swap is evaluate "_ahs_reload()", continue, and evaluate "_ahs_correct_jump()"
+            const response1 = await session.customRequest('evaluate', { 
+                expression: `_ahs_reload(${inputLine})`,
+                frameId: frameId,
+                threadId: 1,
+                context: 'repl',
+            });
+            const response2 = await session.customRequest('continue', { 
+                threadId: 1,
+            });
+            const response3 = await session.customRequest('evaluate', { 
+                expression: `_ahs_correct_jump()`,
+                frameId: frameId,
+                threadId: 1,
+                context: 'repl',
+            });
+            console.log('Hotswap response:', response1, response2, response3);
+        } catch (error) {
+            console.error('Error during hotswap:', error);
+            vscode.window.showErrorMessage(`Failed to hotswap line: ${error}`);
+        }
+    }
+
     /**
      * Loads a specific snapshot state during a debug session
      * Uses the Debug Adapter Protocol and monitoringpy.core.reanimation tools
@@ -799,27 +843,19 @@ export class DebuggerService {
                 console.log('Executing snapshot loading command...');
                 const response = await this.evaluate(loadSnapshotCommand, frameId, threadId);
                 console.log('Snapshot loading response:', response);
-                
-                if (response && typeof response.result === 'string' && response.result.startsWith('SUCCESS:')) {
-                    console.log('✓ Successfully loaded snapshot state');
-                    vscode.window.showInformationMessage(`Successfully loaded snapshot #${snapshotId} state`);
-                    return true;
-                } else {
-                    console.log('✗ Snapshot loading failed or returned unexpected result');
-                    const errorMsg = response?.result || 'Unknown error';
-                    vscode.window.showErrorMessage(`Failed to load snapshot #${snapshotId}: ${errorMsg}`);
-                    return false;
-                }
             } catch (evalError) {
                 console.error('Error during evaluation:', evalError);
                 vscode.window.showErrorMessage(`Error executing snapshot load: ${evalError}`);
                 return false;
             }
+
+            // Use gotoLine to move to the line of the snapshot
         } catch (error) {
             console.error('Error in goToSnapshot:', error);
             vscode.window.showErrorMessage(`Failed to load snapshot: ${error}`);
             return false;
         }
+        return true;
     }
 
     /**

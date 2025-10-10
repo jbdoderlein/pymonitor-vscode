@@ -912,8 +912,23 @@
         // Sync slider with current step
         if (timelineSlider) {
             timelineSlider.value = currentStep;
+            timelineSlider.max = snapshots.length - 1;
         }
-        
+        if (prevButton && prevButton.disabled !== (currentStep === 0)) {
+            prevButton.disabled = (currentStep === 0);
+        }
+        if (nextButton && nextButton.disabled !== (currentStep === snapshots.length - 1)) {
+            nextButton.disabled = (currentStep === snapshots.length - 1);
+        }
+
+        const timelineInfo = document.querySelector('.timeline-info');
+        if (timelineInfo) {
+            const totalSteps = snapshots.length;
+            // Update the "Step X of Y" text
+            timelineInfo.innerHTML = `Step <span id="currentStep">${currentStep + 1}</span> of ${totalSteps}`;
+            debugLog(`Updated timeline info to show: Step ${currentStep + 1} of ${totalSteps}`);
+        }
+
         // Update UI
         updateCurrentFrame();
         

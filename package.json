@@ -54,6 +54,18 @@
       {
         "command": "graph.update",
         "title": "Graph: Update"
+      },
+      {
+        "command": "omniscientDebugPanel.refreshEntry",
+        "title": "Refresh OmniDebug"
+      },
+      {
+        "command": "omniscientDebugPanel.gotoLine",
+        "title": "OD : Go to Line",
+        "icon": {
+          "light": "debug-continue",
+          "dark": "debug-continue"
+        }
       }
     ],
     "codeLens": {
@@ -65,6 +77,20 @@
           "command": "pymonitor.hotswapLine",
           "group": "navigation@100",
           "when": "inDebugMode && debugType == python"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "omniscientDebugPanel.gotoLine",
+          "when": "view == omniscientDebugPanel",
+          "group": "inline"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "omniscientDebugPanel.gotoLine",
+          "when": "view == omniscientDebugPanel",
+          "group": "inline"
         }
       ]
     },

@@ -18,7 +18,7 @@ export function highlightLine(editor: vscode.TextEditor, line: number, moveCurso
 
     // Create new highlight with a distinct color (different from debugger yellow)
     const decorationType = vscode.window.createTextEditorDecorationType({
-        backgroundColor: new vscode.ThemeColor('editorInfo.background'), // Light blue background
+        backgroundColor: new vscode.ThemeColor('merge.currentContentBackground'), // Light blue background
         borderColor: new vscode.ThemeColor('editorInfo.foreground'),      // Blue border
         borderStyle: 'solid',
         borderWidth: '0 0 0 3px',  // Slightly thicker border for visibility

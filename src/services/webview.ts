@@ -5,6 +5,7 @@ import { getWebviewContent } from '../utils/webview';
 import { highlightLine, clearHighlight } from '../utils/highlight';
 import { state, debugLog } from './state';
 import { getStackTrace, getFunctionTraces, getFunctionData, refreshApiData, getTracesList, compareTraces } from './api';
+import { DebuggerService } from './debugger';
 
 export function showFunctionDetails(functions: FunctionData[], context: vscode.ExtensionContext) {
     state.currentFunctionData = functions;
@@ -116,6 +117,9 @@ export function showFunctionDetails(functions: FunctionData[], context: vscode.E
             if (message.snapshotId !== undefined && message.dbPath) {
                 console.log('Loading snapshot state directly without navigation');
                 vscode.commands.executeCommand('pymonitor.goToSnapshotState', message.snapshotId, message.dbPath);
+
+                const debugService = DebuggerService.getInstance();
+                await debugService.hotswapSpecificLine(message.line);
             } else {
                 console.error('Missing required parameters for goToSnapshotState');
             }
