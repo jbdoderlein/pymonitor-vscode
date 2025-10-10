@@ -1,17 +1,18 @@
 {
-  "name": "pymonitor",
-  "displayName": "pymonitor-vscode",
-  "description": "Python execution monitoring and visualization",
-  "version": "0.0.1",
+  "name": "SpaceTimePy-vscode",
+  "displayName": "SpaceTimePy-vscode",
+  "description": "SpaceTime Programming tools for Python in VSCode",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.98.0"
   },
   "categories": [
     "Other"
   ],
-  "files": [
-    "dist/**/*"
-  ],
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/jbdoderlein/pymonitor-vscode.git"
+  },
   "activationEvents": [
     "onLanguage:python",
     "workspaceContains:main.db"

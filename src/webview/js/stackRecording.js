@@ -673,7 +673,7 @@
     // Show tooltip for graph nodes
     function showNodeTooltip(event, d) {
         const tooltip = document.getElementById('tooltip');
-        if (!tooltip) return;
+        if (!tooltip) {return;}
         
         let content = `<strong>Node ${d.id}</strong><br/>`;
         content += `<strong>State:</strong> ${d.state}<br/>`;
@@ -765,7 +765,7 @@
     // Update graph statistics display
     function updateGraphStats(graphData) {
         const statsContent = document.getElementById('stats-content');
-        if (!statsContent) return;
+        if (!statsContent) {return;}
         
         const nodeCount = Object.keys(graphData.nodes).length;
         const edgeCount = graphData.edges.length;
@@ -798,7 +798,7 @@
     
     // Display code content in a container
     function displayCodeContent(traceData, container, version) {
-        if (!container || !traceData) return;
+        if (!container || !traceData) {return;}
         
         let codeContent = '';
         let firstLineNo = 1;
@@ -842,7 +842,7 @@
     
     // Highlight corresponding graph node when code line is clicked
     function highlightCorrespondingGraphNode(lineNumber) {
-        if (!graphSvg) return;
+        if (!graphSvg) {return;}
         
         const nodes = graphSvg.select('.graph-content').selectAll('circle');
         
@@ -942,7 +942,7 @@
     // Highlight the current snapshot in the variables change table
     function highlightCurrentSnapshotInTable() {
         const rows = document.querySelectorAll('.var-changes-table tbody tr');
-        if (!rows.length) return;
+        if (!rows.length) {return;}
         
         // Find the row that corresponds to the current local step
         rows.forEach((row, index) => {

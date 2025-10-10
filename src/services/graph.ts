@@ -88,7 +88,7 @@ function calculateNodeOrder(apiData: ApiGraphData): Record<string, number> {
 
     // DFS to assign order
     const dfs = (nodeId: string) => {
-        if (visited.has(nodeId)) return;
+        if (visited.has(nodeId)) {return;}
         visited.add(nodeId);
         order[nodeId] = currentOrder++;
 
@@ -115,7 +115,7 @@ function calculateNodeOrder(apiData: ApiGraphData): Record<string, number> {
  * Format variables array into a readable string
  */
 function formatVariables(vars: Array<Record<string, string>>): string {
-    if (!vars || vars.length === 0) return '';
+    if (!vars || vars.length === 0) {return '';}
     
     const allVars: Record<string, string> = {};
     vars.forEach(varObj => {
