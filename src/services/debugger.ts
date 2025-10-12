@@ -551,23 +551,23 @@ export class DebuggerService {
             let content = `# PyMonitor debug wrapper - temporary file\n`;
             content += `import sys\n`;
             content += `import os\n`;
-            content += `import monitoringpy\n`;
+            content += `import spacetimepy\n`;
             
             // Use the provided session ID or fallback to sys.argv[1]
             const sessionName = sessionId ? `"Debugger Session ${sessionId}"` : `f"Debugger Session {sys.argv[1]}"`;
             
-            // If using reanimation, use the new monitoringpy.core.reanimation API
+            // If using reanimation, use the new spacetimepy.core.reanimation API
             if (useReanimation && this.selectedFunctionCallId) {
-                content += `from monitoringpy.core.reanimation import execute_function_call, load_execution_data\n\n`;
-                content += `from monitoringpy.interface.debugger import inject_do_jump, hotline\n\n`;
+                content += `from spacetimepy.core.reanimation import execute_function_call, load_execution_data\n\n`;
+                content += `from spacetimepy.interface.debugger import inject_do_jump, hotline\n\n`;
                 content += `# Add workspace to Python path\n`;
                 content += `sys.path.insert(0, "${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}")\n`;
                 content += `db_path = os.path.join("${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}", "main.db")\n`;
-                content += `monitor = monitoringpy.init_monitoring(db_path=db_path, in_memory=False)\n\n`;
+                content += `monitor = spacetimepy.init_monitoring(db_path=db_path, in_memory=False)\n\n`;
                 
                 content += `# Use the new API for function execution replay\n`;
                 content += `if __name__ == "__main__":\n`;
-                content += `    monitoringpy.start_session(${sessionName})\n`;
+                content += `    spacetimepy.start_session(${sessionName})\n`;
                 content += `    try:\n`;
                 content += `        print(f"Starting reanimation for function execution ID: ${this.selectedFunctionCallId}")\n`;
                 content += `        \n`;
@@ -577,7 +577,7 @@ export class DebuggerService {
                 content += `            import_path="${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}",\n`;
                 content += `            enable_monitoring=True,\n`;
                 content += `            reload_module=True,\n`;
-                content += `            additional_decorators=[monitoringpy.interface.debugger.hotline,monitoringpy.pymonitor(mode="line")]\n`;
+                content += `            additional_decorators=[spacetimepy.interface.debugger.hotline,spacetimepy.line()]\n`;
                 content += `        )\n`;
                 content += `        \n`;
                 content += `        print(f"Reanimation completed successfully with result: {result}")\n`;
@@ -586,21 +586,21 @@ export class DebuggerService {
                 content += `        print(f"Error during function reanimation: {e}")\n`;
                 content += `        import traceback\n`;
                 content += `        traceback.print_exc()\n`;
-                content += `    monitoringpy.end_session()\n`;
+                content += `    spacetimepy.end_session()\n`;
             } else {
                 // Standard approach with simplified script
-                content += `from monitoringpy.interface.debugger import inject_do_jump, hotline\n\n`;
+                content += `from spacetimepy.interface.debugger import inject_do_jump, hotline\n\n`;
                 content += `sys.path.insert(0, "${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}")\n`;
                 content += `db_path = os.path.join("${workspaceFolder.uri.fsPath.replace(/\\/g, '\\\\')}", "main.db")\n`;
-                content += `monitor = monitoringpy.init_monitoring(db_path=db_path, in_memory=False)\n`;
+                content += `monitor = spacetimepy.init_monitoring(db_path=db_path, in_memory=False)\n`;
                 content += `from ${moduleName} import ${functionInfo.name}\n`;
-                content += `monitoringpy.interface.debugger.hotline(${functionInfo.name})\n`;
-                content += `monitoringpy.pymonitor(mode="line")(${functionInfo.name})\n\n`;
-                
+                content += `spacetimepy.interface.debugger.hotline(${functionInfo.name})\n`;
+                content += `spacetimepy.line()(${functionInfo.name})\n\n`;
+
                 content += `# Call the function\n`;
                 content += `if __name__ == "__main__":\n`;
-                content += `    monitoringpy.start_session(${sessionName})\n`;
-                
+                content += `    spacetimepy.start_session(${sessionName})\n`;
+
                 // Create a function call with the provided arguments
                 const callArgs = functionInfo.params
                     .map(param => `${param}=${argValues.get(param) || 'None'}`)
@@ -611,7 +611,7 @@ export class DebuggerService {
                 } else {
                     content += `    ${functionInfo.name}()\n`;
                 }
-                content += `    monitoringpy.end_session()\n`;
+                content += `    spacetimepy.end_session()\n`;
             }
             
             // Create temporary file
@@ -803,7 +803,7 @@ export class DebuggerService {
 
     /**
      * Loads a specific snapshot state during a debug session
-     * Uses the Debug Adapter Protocol and monitoringpy.core.reanimation tools
+     * Uses the Debug Adapter Protocol and spacetimepy.core.reanimation tools
      * 
      * @param snapshotId The ID of the snapshot to load
      * @param dbPath Path to the database file
@@ -837,7 +837,7 @@ export class DebuggerService {
             
             // Use the direct load_snapshot_in_frame function - simplest approach!
             console.log(`Loading snapshot ${snapshotId} using load_snapshot_in_frame...`);
-            const loadSnapshotCommand = `import monitoringpy; monitoringpy.load_snapshot_in_frame(${snapshotId}, "${dbPath}")`;
+            const loadSnapshotCommand = `import spacetimepy; spacetimepy.load_snapshot_in_frame(${snapshotId}, "${dbPath}")`;
             
             try {
                 console.log('Executing snapshot loading command...');

@@ -75,8 +75,8 @@ async function startWebServer(pythonPath: string, workspaceRoot: string): Promis
 		}
 
 		// Start the web server in the background
-		// monitoringpy.interface.web.explorer basic3.db --mode api
-		const command = `${pythonPath} -m monitoringpy.interface.web.explorer ${dbPath} --mode api`;
+		// spacetimepy.interface.web.explorer main.db --mode api
+		const command = `${pythonPath} -m spacetimepy.interface.web.explorer ${dbPath} --mode api`;
 		console.log('Starting server with command:', command);
 
 		webServerProcess = exec(command, { cwd: workspaceRoot });

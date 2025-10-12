@@ -150,6 +150,7 @@ export async function refreshApiData(): Promise<boolean> {
         return true;
     } catch (error) {
         console.error('Error refreshing API data:', error);
+        console.error(error);
         return false;
     }
 }
